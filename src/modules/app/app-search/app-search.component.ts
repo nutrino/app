@@ -452,6 +452,11 @@ export abstract class AppSearchComponent implements OnInit {
     (this.appHelperSvc as AndroidAppHelperService).shareBookmark(bookmarkToShare);
   }
 
+  syncBookmark(): void {
+    console.log('syncBookmark called');
+    this.appHelperSvc.syncSvc.executeSync(false);
+  }
+
   switchToBookmarkView(): void {
     this.appHelperSvc.switchView(RoutePath.Bookmark);
   }
