@@ -1,8 +1,7 @@
 import angular from 'angular';
-import autobind from 'autobind-decorator';
+import { boundMethod } from 'autobind-decorator';
 import browser from 'webextension-polyfill';
 import { AppHelperService } from '../../../../app/shared/app-helper/app-helper.service';
-import { ApiService } from '../../../../shared/api/api.interface';
 import { BookmarkHelperService } from '../../../../shared/bookmark/bookmark-helper/bookmark-helper.service';
 import { ExceptionHandler } from '../../../../shared/errors/errors.interface';
 import Globals from '../../../../shared/global-shared.constants';
@@ -15,7 +14,6 @@ import { UtilityService } from '../../../../shared/utility/utility.service';
 import { WorkingService } from '../../../../shared/working/working.service';
 import { WebExtPlatformService } from '../../../shared/webext-platform/webext-platform.service';
 
-@autobind
 export abstract class WebExtAppHelperService extends AppHelperService {
   $filter: ng.FilterFactory;
   bookmarkHelperSvc: BookmarkHelperService;
@@ -27,7 +25,6 @@ export abstract class WebExtAppHelperService extends AppHelperService {
     '$location',
     '$q',
     '$timeout',
-    'ApiService',
     'BookmarkHelperService',
     'LogService',
     'PlatformService',
@@ -42,7 +39,6 @@ export abstract class WebExtAppHelperService extends AppHelperService {
     $location: ng.ILocationService,
     $q: ng.IQService,
     $timeout: ng.ITimeoutService,
-    ApiSvc: ApiService,
     BookmarkHelperSvc: BookmarkHelperService,
     LogSvc: LogService,
     PlatformSvc: WebExtPlatformService,
@@ -51,19 +47,7 @@ export abstract class WebExtAppHelperService extends AppHelperService {
     UtilitySvc: UtilityService,
     WorkingSvc: WorkingService
   ) {
-    super(
-      $exceptionHandler,
-      $location,
-      $q,
-      $timeout,
-      ApiSvc,
-      LogSvc,
-      PlatformSvc,
-      StoreSvc,
-      SyncSvc,
-      UtilitySvc,
-      WorkingSvc
-    );
+    super($exceptionHandler, $location, $q, $timeout, LogSvc, PlatformSvc, StoreSvc, SyncSvc, UtilitySvc, WorkingSvc);
 
     this.$filter = $filter;
     this.bookmarkHelperSvc = BookmarkHelperSvc;
@@ -110,6 +94,7 @@ export abstract class WebExtAppHelperService extends AppHelperService {
     });
   }
 
+  @boundMethod
   openUrl(event?: Event, url?: string): void {
     // Stop event propogation
     event?.preventDefault();

@@ -1,6 +1,7 @@
 import { Component, OnInit, Output } from 'angular-ts-decorators';
-import autobind from 'autobind-decorator';
+import { boundMethod } from 'autobind-decorator';
 import QRCode from 'qrcode-svg';
+import { ApiSyncInfo } from '../../../shared/api/api.interface';
 import { BackupRestoreService } from '../../../shared/backup-restore/backup-restore.service';
 import { PlatformService } from '../../../shared/global-shared.interface';
 import { StoreKey } from '../../../shared/store/store.enum';
@@ -8,7 +9,6 @@ import { StoreService } from '../../../shared/store/store.service';
 import { UtilityService } from '../../../shared/utility/utility.service';
 import { AppHelperService } from '../../shared/app-helper/app-helper.service';
 
-@autobind
 @Component({
   controllerAs: 'vm',
   selector: 'qrPanel',
@@ -25,8 +25,6 @@ export class AppQrComponent implements OnInit {
   storeSvc: StoreService;
   utilitySvc: UtilityService;
 
-  serviceUrl: string;
-  syncId: string;
   syncIdCopied = false;
 
   @Output() close: () => void;
@@ -55,21 +53,19 @@ export class AppQrComponent implements OnInit {
     this.utilitySvc = UtilitySvc;
   }
 
+  @boundMethod
   copySyncId(): void {
-    this.appHelperSvc.copyTextToClipboard(this.syncId).then(() => {
-      this.syncIdCopied = true;
-    });
+    this.storeSvc
+      .get<ApiSyncInfo>(StoreKey.SyncInfo)
+      .then((syncInfo) => this.appHelperSvc.copyTextToClipboard(syncInfo.id))
+      .then(() => {
+        this.syncIdCopied = true;
+      });
   }
 
   ngOnInit(): void {
-    // Retrieve sync data from store
-    this.$q.all([this.storeSvc.get<string>(StoreKey.SyncId), this.utilitySvc.getServiceUrl()]).then((data) => {
-      [this.syncId, this.serviceUrl] = data;
-
-      // QR code should encode sync info
-      const syncInfo = this.backupRestoreSvc.createSyncInfoObject(this.syncId, this.serviceUrl);
-
-      // Generate QR code
+    // Generate QR code from sync info
+    this.backupRestoreSvc.getSyncInfo().then((syncInfo) => {
       const qrcode = new QRCode({
         content: JSON.stringify(syncInfo),
         padding: 4,

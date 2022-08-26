@@ -1,6 +1,6 @@
 import angular from 'angular';
 import { Component, OnInit } from 'angular-ts-decorators';
-import autobind from 'autobind-decorator';
+import { boundMethod } from 'autobind-decorator';
 import { AppEventType } from '../../../app/app.enum';
 import { AppBookmarkComponent } from '../../../app/app-bookmark/app-bookmark.component';
 import { AppHelperService } from '../../../app/shared/app-helper/app-helper.service';
@@ -21,7 +21,6 @@ import { AndroidPlatformService } from '../../android-shared/android-platform/an
 import { AndroidAlert } from '../android-app.interface';
 import { AndroidAppHelperService } from '../shared/android-app-helper/android-app-helper.service';
 
-@autobind
 @Component({
   controllerAs: 'vm',
   selector: 'appBookmark',
@@ -93,52 +92,54 @@ export class AndroidAppBookmarkComponent extends AppBookmarkComponent implements
     });
   }
 
+  @boundMethod
   createBookmark(): ng.IPromise<void> {
     return super.createBookmark().then((result) => {
       this.$timeout(() => {
-        this.alertSvc.setCurrentAlert({
+        this.alertSvc.currentAlert = {
           message: this.platformSvc.getI18nString(this.Strings.Alert.BookmarkCreated)
-        } as AndroidAlert);
+        } as AndroidAlert;
       }, Globals.InterfaceReadyTimeout);
     });
   }
 
+  @boundMethod
   deleteBookmark(): ng.IPromise<void> {
     // Get current cached bookmarks for undo
     return this.bookmarkHelperSvc.getCachedBookmarks().then((cachedBookmarks) => {
       return super.deleteBookmark().then(() => {
         this.$timeout(() => {
-          this.alertSvc.setCurrentAlert({
+          this.alertSvc.currentAlert = {
             action: this.platformSvc.getI18nString(this.Strings.Button.Undo),
             actionCallback: () => this.undoBookmarkAction(cachedBookmarks),
             message: this.platformSvc.getI18nString(this.Strings.Alert.BookmarkDeleted)
-          } as AndroidAlert);
+          } as AndroidAlert;
         }, Globals.InterfaceReadyTimeout);
       });
     });
   }
 
   getMetadataForCurrentPage(): ng.IPromise<Boolean | BookmarkMetadata> {
-    if (angular.isUndefined(this.platformSvc.currentPage)) {
+    if (angular.isUndefined(this.platformSvc.sharedBookmark)) {
       return this.$q.resolve(undefined);
     }
 
     // Show a message if current page has no url - user shared an value that did not contain a valid url
-    if (angular.isUndefined(this.platformSvc.currentPage.url)) {
-      this.alertSvc.setCurrentAlert({
+    if (angular.isUndefined(this.platformSvc.sharedBookmark.url)) {
+      this.alertSvc.currentAlert = {
         message: this.platformSvc.getI18nString(this.Strings.View.Bookmark.InvalidUrlShared),
         type: AlertType.Error
-      });
+      };
       return this.$q.resolve().then(() => false);
     }
 
     // Check auto fetch metadata preference before retrieving metadata
-    this.bookmarkFormData = this.platformSvc.currentPage;
+    this.bookmarkFormData = this.platformSvc.sharedBookmark;
     this.originalUrl = this.bookmarkFormData.url;
     return this.settingsSvc.autoFetchMetadata().then((autoFetchMetadata) => {
       if (!autoFetchMetadata) {
         this.displayUpdatePropertiesButton = true;
-        return this.platformSvc.currentPage;
+        return this.platformSvc.sharedBookmark;
       }
       return super.getMetadataForCurrentPage();
     });
@@ -147,7 +148,7 @@ export class AndroidAppBookmarkComponent extends AppBookmarkComponent implements
   ngOnInit(): ng.IPromise<void> {
     return super.ngOnInit().finally(() => {
       // Clear current page
-      this.platformSvc.currentPage = undefined;
+      this.platformSvc.sharedBookmark = undefined;
     });
   }
 
@@ -162,16 +163,17 @@ export class AndroidAppBookmarkComponent extends AppBookmarkComponent implements
       .finally(() => this.utilitySvc.broadcastEvent(AppEventType.RefreshBookmarkSearchResults));
   }
 
+  @boundMethod
   updateBookmark(): ng.IPromise<void> {
     // Get current cached bookmarks for undo
     return this.bookmarkHelperSvc.getCachedBookmarks().then((cachedBookmarks) => {
       return super.updateBookmark().then(() => {
         this.$timeout(() => {
-          this.alertSvc.setCurrentAlert({
+          this.alertSvc.currentAlert = {
             action: this.platformSvc.getI18nString(this.Strings.Button.Undo),
             actionCallback: () => this.undoBookmarkAction(cachedBookmarks),
             message: this.platformSvc.getI18nString(this.Strings.Alert.BookmarkUpdated)
-          } as AndroidAlert);
+          } as AndroidAlert;
         }, Globals.InterfaceReadyTimeout);
       });
     });

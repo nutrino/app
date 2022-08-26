@@ -1,6 +1,6 @@
 import angular from 'angular';
 import { Injectable } from 'angular-ts-decorators';
-import autobind from 'autobind-decorator';
+import { boundMethod } from 'autobind-decorator';
 import { AppEventType } from '../../../app/app.enum';
 import { AlertService } from '../../../shared/alert/alert.service';
 import { BookmarkChangeType } from '../../../shared/bookmark/bookmark.enum';
@@ -20,7 +20,7 @@ import {
 import { ExceptionHandler } from '../../../shared/errors/errors.interface';
 import Globals from '../../../shared/global-shared.constants';
 import { PlatformType } from '../../../shared/global-shared.enum';
-import { I18nObject, PlatformService, WebpageMetadata } from '../../../shared/global-shared.interface';
+import { I18nObject, PlatformInfo, PlatformService, WebpageMetadata } from '../../../shared/global-shared.interface';
 import { LogService } from '../../../shared/log/log.service';
 import { MetadataService } from '../../../shared/metadata/metadata.service';
 import { NetworkService } from '../../../shared/network/network.service';
@@ -32,7 +32,6 @@ import { UtilityService } from '../../../shared/utility/utility.service';
 import { WorkingContext } from '../../../shared/working/working.enum';
 import { WorkingService } from '../../../shared/working/working.service';
 
-@autobind
 @Injectable('PlatformService')
 export class AndroidPlatformService implements PlatformService {
   Strings = require('../../../../../res/strings/en.json');
@@ -54,7 +53,7 @@ export class AndroidPlatformService implements PlatformService {
   workingSvc: WorkingService;
 
   backgroundSyncInterval: ng.IPromise<void>;
-  _currentPage: BookmarkMetadata;
+  _sharedBookmark: BookmarkMetadata;
   cancelGetPageMetadata: () => any;
   i18nObjects: I18nObject[];
   loadingId: string;
@@ -110,11 +109,11 @@ export class AndroidPlatformService implements PlatformService {
     this.i18nObjects = [];
   }
 
-  get currentPage(): BookmarkMetadata {
-    return this._currentPage;
+  get sharedBookmark(): BookmarkMetadata {
+    return this._sharedBookmark;
   }
-  set currentPage(value: BookmarkMetadata) {
-    this._currentPage = value;
+  set sharedBookmark(value: BookmarkMetadata) {
+    this._sharedBookmark = value;
   }
 
   get syncSvc(): SyncService {
@@ -201,7 +200,7 @@ export class AndroidPlatformService implements PlatformService {
 
       this.executeSync(true)
         // Disable background sync if sync successfull
-        .then(this.disableBackgroundSync)
+        .then(() => this.disableBackgroundSync())
         .catch((err) => {
           // Swallow sync uncommitted and network connection errors to not flood logs with duplicate error messages
           if (err instanceof SyncUncommittedError || this.networkSvc.isNetworkConnectionError(err)) {
@@ -262,9 +261,10 @@ export class AndroidPlatformService implements PlatformService {
   }
 
   getCurrentUrl(): ng.IPromise<string> {
-    return this.$q.resolve(this.currentPage?.url);
+    return this.$q.resolve(this.sharedBookmark?.url);
   }
 
+  @boundMethod
   getI18nString(i18nObj: I18nObject): string {
     const i18nStr = this.i18nObjects[i18nObj.key];
     if (angular.isUndefined(i18nStr ?? undefined)) {
@@ -278,14 +278,14 @@ export class AndroidPlatformService implements PlatformService {
     let loadUrlTimeout: ng.IPromise<void>;
 
     // Check for protocol
-    let metadataUrl = pageUrl ?? this.currentPage?.url;
+    let metadataUrl = pageUrl ?? this.sharedBookmark?.url;
     if (metadataUrl && !new RegExp(Globals.URL.ProtocolRegex).test(metadataUrl)) {
       metadataUrl = `https://${metadataUrl}`;
     }
 
     // Set default metadata from provided page url or current page
     const metadata: WebpageMetadata = {
-      title: this.currentPage?.title,
+      title: this.sharedBookmark?.title,
       url: metadataUrl
     };
 
@@ -375,21 +375,39 @@ export class AndroidPlatformService implements PlatformService {
     return promise;
   }
 
+  getPlatformInfo(): PlatformInfo {
+    return {
+      device: `${window.device.manufacturer} ${window.device.model}`
+    };
+  }
+
   getSupportedUrl(url: string): string {
     return url;
   }
 
   initI18n(): ng.IPromise<void> {
-    return this.getCurrentLocale()
+    // Load strings for default locale first
+    return this.$http
+      .get<I18nObject[]>(`./assets/strings_${Globals.I18n.DefaultLocale}.json`)
+      .then((response) => {
+        this.i18nObjects = response.data;
+
+        // Load strings for current locale
+        return this.getCurrentLocale();
+      })
       .then((currentLocale) => {
         const i18nCode = currentLocale.split('-')[0];
-        return this.$http.get<I18nObject[]>(`./assets/strings_${i18nCode}.json`).then((response) => {
-          this.i18nObjects = response.data;
-        });
+        return this.$http
+          .get<I18nObject[]>(`./assets/strings_${i18nCode}.json`)
+          .then((response) => {
+            this.i18nObjects = response.data;
+          })
+          .catch((err) => {
+            this.logSvc.logWarning(`Failed to load i18n strings for locale ${currentLocale}`);
+          });
       })
       .catch((err) => {
-        this.logSvc.logWarning(`Couldn’t load i18n strings`);
-        throw err;
+        this.logSvc.logWarning(`Failed to load i18n strings: ${err?.message}`);
       });
   }
 
@@ -398,6 +416,7 @@ export class AndroidPlatformService implements PlatformService {
     return this.$q.resolve();
   }
 
+  @boundMethod
   openUrl(url: string): void {
     window.open(url, '_system', '');
   }
@@ -471,7 +490,7 @@ export class AndroidPlatformService implements PlatformService {
             throw err;
           });
       })
-      .finally(this.workingSvc.hide);
+      .finally(() => this.workingSvc.hide());
   }
 
   refreshNativeInterface(): ng.IPromise<void> {

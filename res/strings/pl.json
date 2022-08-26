@@ -251,6 +251,16 @@
         "default": "Synchronizacja nie powiodła się"
       }
     },
+    "IncompleteSyncInfo": {
+      "Message": {
+        "key": "Error_IncompleteSyncInfo_Message",
+        "default": "Nie można znaleźć zapisanych poświadczeń. Włącz ponownie synchronizację i spróbuj ponownie."
+      },
+      "Title": {
+        "key": "Error_IncompleteSyncInfo_Title",
+        "default": "Brakujące poświadczenia"
+      }
+    },
     "InvalidCredentials": {
       "Message": {
         "key": "Error_InvalidCredentials_Message",
@@ -289,16 +299,6 @@
       "Title": {
         "key": "Error_LocalSyncError_Title",
         "default": "Błąd synchronizacji"
-      }
-    },
-    "MissingClientData": {
-      "Message": {
-        "key": "Error_MissingClientData_Message",
-        "default": "Nie można znaleźć przechowywanych danych logowania. Włącz ponownie synchronizację i spróbuj ponownie."
-      },
-      "Title": {
-        "key": "Error_MissingClientData_Title",
-        "default": "Brak danych logowania"
       }
     },
     "NetworkConnection": {
@@ -1220,6 +1220,16 @@
             "default": "<p>Włączenie tego ustawienia zastąpi zakładki znajdujące się obecnie w pasku zakładek twoimi zsynchronizowanymi zakładkami.</p><p>OK, aby kontynuować?</p>"
           }
         },
+        "Telemetry": {
+          "Label": {
+            "key": "View_Settings_Prefs_Telemetry_Label",
+            "default": "Włącz telemetrię"
+          },
+          "Description": {
+            "key": "View_Settings_Prefs_Telemetry_Description",
+            "default": "Od czasu do czasu wysyłaj anonimowe dane techniczne, aby pomóc ulepszyć xBrowserSync."
+          }
+        },
         "Title": {
           "key": "View_Settings_Prefs_Title",
           "default": "Ustawienia"
@@ -1334,6 +1344,16 @@
       "Content": {
         "key": "View_SyncRemoved_Content",
         "default": "<p>Twoja synchronizacja nie została znaleziona i mogła zostać usunięta z powodu braku aktywności.</p><p>Będziesz musiał utworzyć nową synchronizację, ale najpierw kliknij na poniższy przycisk, aby pobrać kopię zapasową zsynchronizowanych danych, którą możesz następnie przywrócić do nowej synchronizacji.</p>"
+      }
+    },
+    "TelemetryCheck": {
+      "Title": {
+        "key": "View_TelemetryCheck_Title",
+        "default": "Wysłać anonimową telemetrię?"
+      },
+      "Content": {
+        "key": "View_TelemetryCheck_Content",
+        "default": "<p>xBrowserSync różni się od tradycyjnych aplikacji, ponieważ jest całkowicie anonimowym narzędziem zapewniającym prywatność. Utrzymanie takiego narzędzia jest trudne, ponieważ nie mamy dostępu do danych użytkowników, aby pomóc określić, jak najlepiej wykorzystać nasze ograniczone zasoby. Dlatego prosimy o pozwolenie na okazjonalne wysyłanie anonimowych danych technicznych, które pomogą nam ulepszyć xBrowserSync.</p><p>Te dane telemetryczne nie zawierają żadnych danych osobowych ani identyfikujących, ani żadnych zaszyfrowanych danych synchronizacji i nigdy nie są. udostępniane stronom trzecim (możesz wyrazić zgodę lub zrezygnować w dowolnym momencie w panelu Ustawienia).</p>"
       }
     },
     "Updated": {

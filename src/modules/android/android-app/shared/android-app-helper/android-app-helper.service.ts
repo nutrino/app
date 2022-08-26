@@ -1,7 +1,6 @@
 import { Injectable } from 'angular-ts-decorators';
-import autobind from 'autobind-decorator';
+import { boundMethod } from 'autobind-decorator';
 import { AppHelperService } from '../../../../app/shared/app-helper/app-helper.service';
-import { ApiService } from '../../../../shared/api/api.interface';
 import { Bookmark } from '../../../../shared/bookmark/bookmark.interface';
 import { ExceptionHandler } from '../../../../shared/errors/errors.interface';
 import { LogService } from '../../../../shared/log/log.service';
@@ -12,7 +11,6 @@ import { UtilityService } from '../../../../shared/utility/utility.service';
 import { WorkingService } from '../../../../shared/working/working.service';
 import { AndroidPlatformService } from '../../../android-shared/android-platform/android-platform.service';
 
-@autobind
 @Injectable('AppHelperService')
 export class AndroidAppHelperService extends AppHelperService {
   $interval: ng.IIntervalService;
@@ -24,7 +22,6 @@ export class AndroidAppHelperService extends AppHelperService {
     '$location',
     '$q',
     '$timeout',
-    'ApiService',
     'LogService',
     'PlatformService',
     'StoreService',
@@ -38,7 +35,6 @@ export class AndroidAppHelperService extends AppHelperService {
     $location: ng.ILocationService,
     $q: ng.IQService,
     $timeout: ng.ITimeoutService,
-    ApiSvc: ApiService,
     LogSvc: LogService,
     PlatformSvc: AndroidPlatformService,
     StoreSvc: StoreService,
@@ -46,19 +42,7 @@ export class AndroidAppHelperService extends AppHelperService {
     UtilitySvc: UtilityService,
     WorkingSvc: WorkingService
   ) {
-    super(
-      $exceptionHandler,
-      $location,
-      $q,
-      $timeout,
-      ApiSvc,
-      LogSvc,
-      PlatformSvc,
-      StoreSvc,
-      SyncSvc,
-      UtilitySvc,
-      WorkingSvc
-    );
+    super($exceptionHandler, $location, $q, $timeout, LogSvc, PlatformSvc, StoreSvc, SyncSvc, UtilitySvc, WorkingSvc);
 
     this.$exceptionHandler = $exceptionHandler;
     this.$interval = $interval;
@@ -104,6 +88,7 @@ export class AndroidAppHelperService extends AppHelperService {
     return this.$q.resolve(this.syncSvc.getSyncQueueLength());
   }
 
+  @boundMethod
   openUrl(event?: Event, url?: string): void {
     // Stop event propogation
     this.utilitySvc.stopEventPropagation(event);

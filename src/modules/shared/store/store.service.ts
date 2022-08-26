@@ -1,9 +1,7 @@
 import angular from 'angular';
-import autobind from 'autobind-decorator';
 import { StoreKey } from './store.enum';
 import { StoreContent } from './store.interface';
 
-@autobind
 export abstract class StoreService {
   $q: ng.IQService;
   dbName = 'xbs-store';
@@ -53,9 +51,11 @@ export abstract class StoreService {
           this.setInStore(StoreKey.DisplayHelp, true),
           this.setInStore(StoreKey.DisplayOtherSyncsWarning, false),
           this.setInStore(StoreKey.DisplayPermissions, false),
+          this.setInStore(StoreKey.DisplayTelemetryCheck, true),
           this.setInStore(StoreKey.DisplayUpdated, false),
           this.setInStore(StoreKey.SyncBookmarksToolbar, false),
-          this.setInStore(StoreKey.SyncEnabled, false)
+          this.setInStore(StoreKey.SyncEnabled, false),
+          this.setInStore(StoreKey.TelemetryEnabled, true)
         ]);
       })
       .then(() => {});

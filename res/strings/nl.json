@@ -251,6 +251,16 @@
         "default": "Synchronisatie mislukt"
       }
     },
+    "IncompleteSyncInfo": {
+      "Message": {
+        "key": "Error_IncompleteSyncInfo_Message",
+        "default": "Kan opgeslagen inloggegevens niet vinden. Schakel synchronisatie opnieuw in en probeer het opnieuw."
+      },
+      "Title": {
+        "key": "Error_IncompleteSyncInfo_Title",
+        "default": "Inloggegevens ontbreken"
+      }
+    },
     "InvalidCredentials": {
       "Message": {
         "key": "Error_InvalidCredentials_Message",
@@ -289,16 +299,6 @@
       "Title": {
         "key": "Error_LocalSyncError_Title",
         "default": "Synchronisatiefout"
-      }
-    },
-    "MissingClientData": {
-      "Message": {
-        "key": "Error_MissingClientData_Message",
-        "default": "Kan opgeslagen inloggegevens niet vinden. Schakel synchronisatie opnieuw in en probeer het opnieuw."
-      },
-      "Title": {
-        "key": "Error_MissingClientData_Title",
-        "default": "Inloggegevens ontbreken"
       }
     },
     "NetworkConnection": {
@@ -1220,6 +1220,16 @@
             "default": "<p>Het inschakelen van deze instelling zal de huidige bladwijzers in de bladwijzerwerkbalk vervangen door je gesynchroniseerde bladwijzers.</p><p>OK om door te gaan?</p>"
           }
         },
+        "Telemetry": {
+          "Label": {
+            "key": "View_Settings_Prefs_Telemetry_Label",
+            "default": "Telemetrie inschakelen"
+          },
+          "Description": {
+            "key": "View_Settings_Prefs_Telemetry_Description",
+            "default": "Stuur af en toe anonieme technische gegevens om xBrowserSync te helpen verbeteren."
+          }
+        },
         "Title": {
           "key": "View_Settings_Prefs_Title",
           "default": "Voorkeuren"
@@ -1334,6 +1344,16 @@
       "Content": {
         "key": "View_SyncRemoved_Content",
         "default": "<p>Je synchronisatie kon niet worden gevonden en is mogelijk verwijderd door inactiviteit.</p><p>Je moet een nieuwe synchronisatie aanmaken, maar klik eerst op de knop hieronder om een back-up van je gesynchroniseerde gegevens te downloaden die je vervolgens kunt terugzetten naar je nieuwe synchronisatie.</p>"
+      }
+    },
+    "TelemetryCheck": {
+      "Title": {
+        "key": "View_TelemetryCheck_Title",
+        "default": "Anonieme telemetrie versturen?"
+      },
+      "Content": {
+        "key": "View_TelemetryCheck_Content",
+        "default": "<p>xBrowserSync is anders dan traditionele apps, omdat het een volledig anonieme, privacy-first tool is. Het onderhouden van een dergelijke tool is een uitdaging omdat we geen toegang hebben tot gebruikersgegevens om te helpen bepalen hoe we onze beperkte middelen het beste kunnen inzetten. Daarom vragen we uw toestemming om af en toe anonieme technische gegevens te verzenden om ons te helpen xBrowserSync te verbeteren.</p><p>Deze telemetriegegevens bevatten geen persoonlijke of identificerende gegevens, noch uw versleutelde synchronisatiegegevens en zijn nooit gedeeld met derden (u kunt zich op elk moment aan- of afmelden in het instellingenpaneel).</p>"
       }
     },
     "Updated": {

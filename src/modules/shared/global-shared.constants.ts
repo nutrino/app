@@ -15,10 +15,11 @@ export default {
     SeparatorUrl: 'xbs:separator',
     VerticalSeparatorTitle: '|'
   },
+  Debounce: 300,
   I18n: {
     DefaultLocale: 'en'
   },
-  InterfaceReadyTimeout: 10,
+  InterfaceReadyTimeout: 100,
   LookaheadMinChars: 2,
   MinApiVersion: '1.1.9',
   PathToAssets: 'assets',
@@ -27,6 +28,7 @@ export default {
   },
   ReleaseNotesUrlStem: 'https://github.com/xbrowsersync/app/releases/tag/v',
   ReleaseLatestUrl: 'https://api.github.com/repos/xbrowsersync/app/releases/latest',
+  TelemetryUrl: 'https://telemetry.xbrowsersync.org/submit',
   Title: 'xBrowserSync',
   URL: {
     DefaultServiceUrl: 'https://api.xbrowsersync.org',

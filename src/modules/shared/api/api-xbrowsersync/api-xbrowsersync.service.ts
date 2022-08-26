@@ -1,14 +1,11 @@
 import angular from 'angular';
 import { Injectable } from 'angular-ts-decorators';
-import autobind from 'autobind-decorator';
+import DOMPurify from 'dompurify';
+import { marked } from 'marked';
 import {
   BaseError,
-  ClientDataNotFoundError,
   DailyNewSyncLimitReachedError,
   DataOutOfSyncError,
-  HttpRequestAbortedError,
-  HttpRequestFailedError,
-  HttpRequestTimedOutError,
   InvalidServiceError,
   NetworkConnectionError,
   NotAcceptingNewSyncsError,
@@ -32,15 +29,18 @@ import {
   ApiGetLastUpdatedResponse,
   ApiGetSyncVersionResponse,
   ApiService,
-  ApiServiceInfoResponse,
   ApiUpdateBookmarksRequest,
   ApiUpdateBookmarksResponse
 } from '../api.interface';
 import { ApiXbrowsersyncResource } from './api-xbrowsersync.enum';
-import { ApiXbrowsersyncErrorResponse, ApiXbrowsersyncServiceInfoResponse } from './api-xbrowsersync.interface';
+import {
+  ApiXbrowsersyncErrorResponse,
+  ApiXbrowsersyncServiceInfo,
+  ApiXbrowsersyncServiceInfoResponse,
+  ApiXbrowsersyncSyncInfo
+} from './api-xbrowsersync.interface';
 
-@autobind
-@Injectable('ApiService')
+@Injectable('ApiXbrowsersyncService')
 export class ApiXbrowsersyncService implements ApiService {
   $injector: ng.auto.IInjectorService;
   $http: ng.IHttpService;
@@ -87,10 +87,10 @@ export class ApiXbrowsersyncService implements ApiService {
     });
   }
 
-  checkServiceStatus(url?: string): ng.IPromise<ApiServiceInfoResponse> {
+  checkServiceStatus(url?: string): ng.IPromise<ApiXbrowsersyncServiceInfoResponse> {
     return this.checkNetworkConnection().then(() => {
       // Get current service url if not provided
-      return (!url ? this.utilitySvc.getServiceUrl() : this.$q.resolve(url))
+      return (!url ? this.getServiceUrl() : this.$q.resolve(url))
         .then((serviceUrl) => {
           // Request service info
           const requestConfig: ng.IRequestConfig = {
@@ -98,9 +98,11 @@ export class ApiXbrowsersyncService implements ApiService {
             url: `${serviceUrl}/${ApiXbrowsersyncResource.ServiceInformation}`,
             timeout: 3000
           };
-          return this.$http<ApiXbrowsersyncServiceInfoResponse>(requestConfig).catch(this.handleFailedRequest);
+          return this.$http<ApiXbrowsersyncServiceInfoResponse>(requestConfig).catch((err) =>
+            this.handleFailedRequest(err)
+          );
         })
-        .then(this.apiRequestSucceeded)
+        .then((response) => this.apiRequestSucceeded(response))
         .then((response) => {
           // Check service is a valid xBrowserSync API
           const { data: serviceInfo } = response;
@@ -122,7 +124,7 @@ export class ApiXbrowsersyncService implements ApiService {
     return this.checkNetworkConnection()
       .then(() => {
         return this.$q
-          .all([this.platformSvc.getAppVersion(), this.utilitySvc.getServiceUrl()])
+          .all([this.platformSvc.getAppVersion(), this.getServiceUrl()])
           .then((data) => {
             const [appVersion, serviceUrl] = data;
             const requestUrl = `${serviceUrl}/${ApiXbrowsersyncResource.Bookmarks}`;
@@ -131,9 +133,9 @@ export class ApiXbrowsersyncService implements ApiService {
             };
             return this.$http
               .post<ApiCreateBookmarksResponse>(requestUrl, JSON.stringify(requestBody))
-              .catch(this.handleFailedRequest);
+              .catch((err) => this.handleFailedRequest(err));
           })
-          .then(this.apiRequestSucceeded)
+          .then((response) => this.apiRequestSucceeded(response))
           .then((response) => {
             // Check response data is valid before returning
             const { data } = response;
@@ -152,32 +154,23 @@ export class ApiXbrowsersyncService implements ApiService {
   }
 
   getBookmarks(): ng.IPromise<ApiGetBookmarksResponse> {
-    // Check secret and sync ID are present
-    return this.storeSvc
-      .get([StoreKey.Password, StoreKey.SyncId])
-      .then((storeContent) => {
-        if (!storeContent.password || !storeContent.syncId) {
-          throw new ClientDataNotFoundError();
+    // Ensure sync credentials
+    return this.utilitySvc
+      .checkSyncCredentialsExist()
+      .then((syncInfo) => {
+        const requestUrl = `${(syncInfo as ApiXbrowsersyncSyncInfo).serviceUrl}/${ApiXbrowsersyncResource.Bookmarks}/${
+          syncInfo.id
+        }`;
+        return this.$http.get<ApiGetBookmarksResponse>(requestUrl).catch((err) => this.handleFailedRequest(err));
+      })
+      .then((response) => this.apiRequestSucceeded(response))
+      .then((response) => {
+        // Check response data is valid before returning
+        const { data } = response;
+        if (!data?.lastUpdated) {
+          throw new UnexpectedResponseDataError();
         }
-
-        return this.checkNetworkConnection().then(() => {
-          // Get current service url
-          return this.utilitySvc
-            .getServiceUrl()
-            .then((serviceUrl) => {
-              const requestUrl = `${serviceUrl}/${ApiXbrowsersyncResource.Bookmarks}/${storeContent.syncId}`;
-              return this.$http.get<ApiGetBookmarksResponse>(requestUrl).catch(this.handleFailedRequest);
-            })
-            .then(this.apiRequestSucceeded)
-            .then((response) => {
-              // Check response data is valid before returning
-              const { data } = response;
-              if (!data?.lastUpdated) {
-                throw new UnexpectedResponseDataError();
-              }
-              return data;
-            });
-        });
+        return data;
       })
       .catch((err) => {
         if (err instanceof InvalidServiceError) {
@@ -188,23 +181,22 @@ export class ApiXbrowsersyncService implements ApiService {
   }
 
   getBookmarksLastUpdated(skipNetworkConnectionCheck = false): ng.IPromise<ApiGetLastUpdatedResponse> {
-    // Check secret and sync ID are present
-    return this.storeSvc
-      .get([StoreKey.Password, StoreKey.SyncId])
-      .then((storeContent) => {
-        if (!storeContent.password || !storeContent.syncId) {
-          throw new ClientDataNotFoundError();
-        }
-
+    // Ensure sync credentials
+    return this.utilitySvc
+      .checkSyncCredentialsExist()
+      .then((syncInfo) => {
         return (skipNetworkConnectionCheck ? this.$q.resolve() : this.checkNetworkConnection()).then(() => {
-          // Get current service url
-          return this.utilitySvc
-            .getServiceUrl()
-            .then((serviceUrl) => {
-              const requestUrl = `${serviceUrl}/${ApiXbrowsersyncResource.Bookmarks}/${storeContent.syncId}/${ApiXbrowsersyncResource.LastUpdated}`;
-              return this.$http.get<ApiGetLastUpdatedResponse>(requestUrl).catch(this.handleFailedRequest);
+          return this.$q
+            .resolve()
+            .then(() => {
+              const requestUrl = `${(syncInfo as ApiXbrowsersyncSyncInfo).serviceUrl}/${
+                ApiXbrowsersyncResource.Bookmarks
+              }/${syncInfo.id}/${ApiXbrowsersyncResource.LastUpdated}`;
+              return this.$http
+                .get<ApiGetLastUpdatedResponse>(requestUrl)
+                .catch((err) => this.handleFailedRequest(err));
             })
-            .then(this.apiRequestSucceeded)
+            .then((response) => this.apiRequestSucceeded(response))
             .then((response) => {
               // Check response data is valid before returning
               const { data } = response;
@@ -223,17 +215,21 @@ export class ApiXbrowsersyncService implements ApiService {
       });
   }
 
-  getBookmarksVersion(syncId: string): ng.IPromise<ApiGetSyncVersionResponse> {
+  getServiceUrl(): ng.IPromise<string> {
+    // Get service url from store
+    return this.storeSvc.get<ApiXbrowsersyncSyncInfo>(StoreKey.SyncInfo).then((syncInfo) => syncInfo?.serviceUrl);
+  }
+
+  getSyncVersion(syncId: string): ng.IPromise<ApiGetSyncVersionResponse> {
     return this.checkNetworkConnection()
       .then(() => {
         // Get current service url
-        return this.utilitySvc
-          .getServiceUrl()
+        return this.getServiceUrl()
           .then((serviceUrl) => {
             const requestUrl = `${serviceUrl}/${ApiXbrowsersyncResource.Bookmarks}/${syncId}/${ApiXbrowsersyncResource.Version}`;
-            return this.$http.get<ApiGetSyncVersionResponse>(requestUrl).catch(this.handleFailedRequest);
+            return this.$http.get<ApiGetSyncVersionResponse>(requestUrl).catch((err) => this.handleFailedRequest(err));
           })
-          .then(this.apiRequestSucceeded)
+          .then((response) => this.apiRequestSucceeded(response))
           .then((response) => {
             // Check response data is valid before returning
             const { data: version } = response;
@@ -287,17 +283,8 @@ export class ApiXbrowsersyncService implements ApiService {
       case response.status >= 500:
         error = new ServiceOfflineError(message);
         break;
-      // Request timed out
-      case response.xhrStatus === 'timeout':
-        error = new HttpRequestTimedOutError();
-        break;
-      // Request timed out
-      case response.xhrStatus === 'abort':
-        error = new HttpRequestAbortedError();
-        break;
-      // Otherwise generic request failed
       default:
-        error = new HttpRequestFailedError(message);
+        error = this.networkSvc.getErrorFromHttpResponse(response);
     }
     return error;
   }
@@ -306,28 +293,50 @@ export class ApiXbrowsersyncService implements ApiService {
     throw this.getErrorFromHttpResponse(response);
   }
 
+  formatServiceInfo(serviceInfoResponse?: ApiXbrowsersyncServiceInfoResponse): ApiXbrowsersyncServiceInfo {
+    if (!serviceInfoResponse) {
+      return;
+    }
+
+    // Render markdown and add link classes to service message
+    let message = serviceInfoResponse.message ? marked(serviceInfoResponse.message) : '';
+    if (message) {
+      const messageDom = new DOMParser().parseFromString(message, 'text/html');
+      messageDom.querySelectorAll('a').forEach((hyperlink) => {
+        hyperlink.className = 'new-tab';
+      });
+      message = DOMPurify.sanitize(messageDom.body.firstElementChild.innerHTML);
+    }
+
+    return {
+      location: serviceInfoResponse.location,
+      maxSyncSize: serviceInfoResponse.maxSyncSize / 1024,
+      message,
+      status: serviceInfoResponse.status,
+      version: serviceInfoResponse.version
+    };
+  }
+
   updateBookmarks(
     encryptedBookmarks: string,
     updateSyncVersion = false,
     skipNetworkConnectionCheck = false
   ): ng.IPromise<ApiUpdateBookmarksResponse> {
-    // Check secret and sync ID are present
-    return this.storeSvc
-      .get([StoreKey.LastUpdated, StoreKey.Password, StoreKey.SyncId])
-      .then((storeContent) => {
-        if (!storeContent.lastUpdated || !storeContent.password || !storeContent.syncId) {
-          throw new ClientDataNotFoundError();
-        }
-
+    // Ensure sync credentials
+    return this.$q
+      .all([this.utilitySvc.checkSyncCredentialsExist(), this.storeSvc.get<string>(StoreKey.LastUpdated)])
+      .then((data) => {
+        const [syncInfo, lastUpdated] = data;
         return (skipNetworkConnectionCheck ? this.$q.resolve() : this.checkNetworkConnection()).then(() => {
-          return this.$q
-            .all([this.platformSvc.getAppVersion(), this.utilitySvc.getServiceUrl()])
-            .then((data) => {
-              const [appVersion, serviceUrl] = data;
-              const requestUrl = `${serviceUrl}/${ApiXbrowsersyncResource.Bookmarks}/${storeContent.syncId}`;
+          return this.platformSvc
+            .getAppVersion()
+            .then((appVersion) => {
+              const requestUrl = `${(syncInfo as ApiXbrowsersyncSyncInfo).serviceUrl}/${
+                ApiXbrowsersyncResource.Bookmarks
+              }/${syncInfo.id}`;
               const requestBody: ApiUpdateBookmarksRequest = {
                 bookmarks: encryptedBookmarks,
-                lastUpdated: storeContent.lastUpdated
+                lastUpdated
               };
 
               // If updating sync version, set as current app version
@@ -337,16 +346,16 @@ export class ApiXbrowsersyncService implements ApiService {
 
               return this.$http
                 .put<ApiUpdateBookmarksResponse>(requestUrl, JSON.stringify(requestBody))
-                .catch(this.handleFailedRequest);
+                .catch((err) => this.handleFailedRequest(err));
             })
-            .then(this.apiRequestSucceeded)
+            .then((response) => this.apiRequestSucceeded(response))
             .then((response) => {
               // Check response data is valid before returning
-              const { data } = response;
-              if (!data?.lastUpdated) {
+              const { data: responseData } = response;
+              if (!responseData?.lastUpdated) {
                 throw new UnexpectedResponseDataError();
               }
-              return data;
+              return responseData;
             });
         });
       })

@@ -1,10 +1,8 @@
 import { Component, OnInit } from 'angular-ts-decorators';
-import autobind from 'autobind-decorator';
 import Globals from '../../shared/global-shared.constants';
 import { UtilityService } from '../../shared/utility/utility.service';
 import { RoutePath } from '../app.enum';
 
-@autobind
 @Component({
   controllerAs: 'vm',
   selector: 'appBackground',
@@ -29,12 +27,13 @@ export class AppBackgroundComponent implements OnInit {
 
   pageHasCloudBackground(): boolean {
     return (
+      this.utilitySvc.checkCurrentRoute(RoutePath.Help) ||
       this.utilitySvc.checkCurrentRoute(RoutePath.Login) ||
-      this.utilitySvc.checkCurrentRoute(RoutePath.Support) ||
       this.utilitySvc.checkCurrentRoute(RoutePath.Permissions) ||
+      this.utilitySvc.checkCurrentRoute(RoutePath.Support) ||
       this.utilitySvc.checkCurrentRoute(RoutePath.SyncRemoved) ||
-      this.utilitySvc.checkCurrentRoute(RoutePath.Updated) ||
-      this.utilitySvc.checkCurrentRoute(RoutePath.Help)
+      this.utilitySvc.checkCurrentRoute(RoutePath.TelemetryCheck) ||
+      this.utilitySvc.checkCurrentRoute(RoutePath.Updated)
     );
   }
 

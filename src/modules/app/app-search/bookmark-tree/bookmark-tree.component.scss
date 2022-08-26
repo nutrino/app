@@ -1,3 +1,4 @@
+@use 'sass:color';
 @import '../../../../styles/modules/all';
 
 bookmark-tree {
@@ -6,7 +7,7 @@ bookmark-tree {
   --color-bookmark-tree-folder-bg: var(--color-separator-bg);
   --color-bookmark-tree-folder-text: #{$color-text1-default};
   --color-bookmark-tree-folder-icon: #{$color-bg2-default};
-  --color-bookmark-tree-bookmark-hover: #{scale-color($color-bg2-default, $lightness: 70%, $saturation: 50%)};
+  --color-bookmark-tree-bookmark-hover: #{color.scale($color-bg2-default, $lightness: 70%, $saturation: 50%)};
 
   @include theme-dark {
     --color-bookmark-bg: var(--color-separator-bg);
@@ -32,16 +33,6 @@ bookmark-tree {
       &.open {
         & > .bookmark-content > .bookmark-heading {
           margin-bottom: 0.75rem;
-
-          &::before {
-            @include icon('\f07c');
-          }
-
-          @media (hover: hover) {
-            &:hover::after {
-              @include icon('\f106');
-            }
-          }
         }
       }
 
@@ -52,31 +43,32 @@ bookmark-tree {
         & > .bookmark-heading {
           color: var(--color-bookmark-tree-folder-text);
           margin-right: 0;
-          padding-left: 1.75rem;
+          padding-left: 1.5rem;
           padding-right: 1.5rem;
 
-          &::before {
-            @include icon('\f07b');
+          icon {
             @include valign;
 
-            left: 0;
-          }
+            font-size: 0.9em;
 
-          &::after {
-            @include icon('\f107');
-            @include valign;
+            &.chevron {
+              color: var(--color-bookmark-tree-folder-icon);
+              font-size: 1.2em;
+              opacity: 0;
+              right: 0;
+            }
 
-            color: var(--color-bookmark-tree-folder-icon);
-            font-size: 1.3em;
-            opacity: 0;
-            right: 0;
+            &.folder {
+              left: 0;
+              top: -0.1em;
+            }
           }
 
           @media (hover: hover) {
             &:hover {
               cursor: pointer;
 
-              &:not(.opening)::after {
+              &:not(.opening) icon.chevron {
                 opacity: 0.6;
               }
             }

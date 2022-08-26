@@ -1,15 +1,14 @@
 import angular from 'angular';
-import autobind from 'autobind-decorator';
 import { BookmarkContainer } from '../../bookmark/bookmark.enum';
 import { Bookmark } from '../../bookmark/bookmark.interface';
 import { BookmarkHelperService } from '../../bookmark/bookmark-helper/bookmark-helper.service';
 import Globals from '../../global-shared.constants';
 import { PlatformService } from '../../global-shared.interface';
+import { StoreKey } from '../../store/store.enum';
 import { StoreService } from '../../store/store.service';
 import { UtilityService } from '../../utility/utility.service';
 import { UpgradeProvider } from '../upgrade.interface';
 
-@autobind
 export abstract class V160UpgradeProviderService implements UpgradeProvider {
   $q: ng.IQService;
   bookmarkHelperSvc: BookmarkHelperService;
@@ -31,7 +30,10 @@ export abstract class V160UpgradeProviderService implements UpgradeProvider {
     this.utilitySvc = UtilitySvc;
   }
 
-  abstract upgradeApp(upgradingFromVersion?: string): ng.IPromise<void>;
+  upgradeApp(upgradingFromVersion?: string): ng.IPromise<void> {
+    // Set help page to display
+    return this.storeSvc.set(StoreKey.DisplayHelp, false);
+  }
 
   upgradeBookmarks(bookmarks: Bookmark[], upgradingFromVersion?: string): ng.IPromise<Bookmark[]> {
     const upgradedBookmarks = angular.copy(bookmarks);

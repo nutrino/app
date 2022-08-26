@@ -1,7 +1,7 @@
 import { Component, OnDestroy, OnInit } from 'angular-ts-decorators';
-import autobind from 'autobind-decorator';
-import { BackupSync } from '../../../shared/backup-restore/backup-restore.interface';
-import { AndroidError, FailedScanError } from '../../../shared/errors/errors';
+import { boundMethod } from 'autobind-decorator';
+import { ApiSyncInfo } from '../../../shared/api/api.interface';
+import { AndroidError, FailedScanError, InvalidSyncInfoError } from '../../../shared/errors/errors';
 import Globals from '../../../shared/global-shared.constants';
 import { PlatformService } from '../../../shared/global-shared.interface';
 import { LogService } from '../../../shared/log/log.service';
@@ -10,7 +10,6 @@ import { StoreService } from '../../../shared/store/store.service';
 import { UtilityService } from '../../../shared/utility/utility.service';
 import { AndroidAppHelperService } from '../shared/android-app-helper/android-app-helper.service';
 
-@autobind
 @Component({
   controllerAs: 'vm',
   selector: 'appScan',
@@ -59,34 +58,17 @@ export class AndroidAppScanComponent implements OnInit, OnDestroy {
     this.utilitySvc = UtilitySvc;
   }
 
+  @boundMethod
   close(): void {
     this.appHelperSvc.switchView();
   }
 
-  decodeQrCode(qrCodeValue: string): any {
-    let serviceUrl: string;
-    let syncId: string;
-    try {
-      // For v1.6.0 or later, expect sync info object
-      const syncInfo = JSON.parse(qrCodeValue);
-      syncId = syncInfo.id;
-      serviceUrl = syncInfo.url;
-    } catch (err) {
-      // For pre-v1.6.0, split the scanned value into it's components
-      const arr = qrCodeValue.split(Globals.QrCode.Delimiter);
-      [syncId, serviceUrl] = arr;
+  decodeQrCode(qrCodeValue: string): ApiSyncInfo {
+    const syncInfo = JSON.parse(qrCodeValue) as ApiSyncInfo;
+    if (!syncInfo?.id || !syncInfo?.serviceType || !syncInfo?.version) {
+      throw new InvalidSyncInfoError('Invalid QR code');
     }
-
-    // Validate decoded values
-    const urlRegex = new RegExp(`^${Globals.URL.ValidUrlRegex}$`, 'i');
-    if (!this.utilitySvc.syncIdIsValid(syncId) || !urlRegex.test(serviceUrl)) {
-      throw new Error('Invalid QR code');
-    }
-
-    return {
-      id: syncId,
-      url: serviceUrl
-    };
+    return syncInfo;
   }
 
   disableLight(): ng.IPromise<void> {
@@ -123,22 +105,19 @@ export class AndroidAppScanComponent implements OnInit, OnDestroy {
     this.startScanning();
   }
 
-  scanCompleted(scannedSyncInfo: BackupSync): ng.IPromise<void> {
-    // Update stored sync id and service values
-    return this.$q
-      .all([
-        this.appHelperSvc.updateServiceUrl(scannedSyncInfo.url),
-        this.storeSvc.set(StoreKey.SyncId, scannedSyncInfo.id)
-      ])
+  scanCompleted(scannedSyncInfo: ApiSyncInfo): ng.IPromise<void> {
+    // Update stored sync info
+    return this.storeSvc
+      .set(StoreKey.SyncInfo, scannedSyncInfo)
       .then(() => this.appHelperSvc.switchView())
       .then(() => this.appHelperSvc.focusOnElement('.active-login-form  input[name="txtPassword"]'));
   }
 
-  startScanning(): ng.IPromise<any> {
+  startScanning(): ng.IPromise<void> {
     this.lightEnabled = false;
     this.invalidSyncId = false;
 
-    return this.$q<BackupSync>((resolve, reject) => {
+    return this.$q<ApiSyncInfo>((resolve, reject) => {
       const waitForScan = () => {
         this.displayScanInterface = true;
 
@@ -146,7 +125,7 @@ export class AndroidAppScanComponent implements OnInit, OnDestroy {
           this.invalidSyncId = false;
         }, 100);
 
-        window.QRScanner.scan((err: any, scannedText: string) => {
+        window.QRScanner.scan((err: any, scannedText: string): void => {
           if (err) {
             return reject(new AndroidError(err._message ?? err.name ?? err.code));
           }
@@ -154,7 +133,7 @@ export class AndroidAppScanComponent implements OnInit, OnDestroy {
           window.QRScanner.pausePreview(() => {
             this.logSvc.logInfo(`Scanned: ${scannedText}`);
 
-            let syncInfo: BackupSync;
+            let syncInfo: ApiSyncInfo;
             try {
               syncInfo = this.decodeQrCode(scannedText);
             } catch (decodeQrCodeErr) {
@@ -181,7 +160,7 @@ export class AndroidAppScanComponent implements OnInit, OnDestroy {
         }
       });
     })
-      .then(this.scanCompleted)
+      .then((scanResult) => this.scanCompleted(scanResult))
       .catch((err) => {
         this.appHelperSvc.switchView().then(() => {
           throw new FailedScanError(undefined, err);
@@ -201,6 +180,7 @@ export class AndroidAppScanComponent implements OnInit, OnDestroy {
     );
   }
 
+  @boundMethod
   toggleCameraLight(switchOn?: boolean): ng.IPromise<void> {
     // If state was elected toggle light based on value
     if (switchOn !== undefined) {

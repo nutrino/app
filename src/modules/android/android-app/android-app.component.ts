@@ -1,6 +1,6 @@
 import angular from 'angular';
 import { Component, OnInit } from 'angular-ts-decorators';
-import autobind from 'autobind-decorator';
+import { boundMethod } from 'autobind-decorator';
 import { AppEventType, RoutePath } from '../../app/app.enum';
 import { AppMainComponent } from '../../app/app-main/app-main.component';
 import { AppHelperService } from '../../app/shared/app-helper/app-helper.service';
@@ -15,6 +15,7 @@ import { SettingsService } from '../../shared/settings/settings.service';
 import { StoreKey } from '../../shared/store/store.enum';
 import { StoreService } from '../../shared/store/store.service';
 import { SyncService } from '../../shared/sync/sync.service';
+import { TelemetryService } from '../../shared/telemetry/telemetry.service';
 import { UpgradeService } from '../../shared/upgrade/upgrade.service';
 import { UtilityService } from '../../shared/utility/utility.service';
 import { WorkingContext } from '../../shared/working/working.enum';
@@ -23,7 +24,6 @@ import { AndroidPlatformService } from '../android-shared/android-platform/andro
 import { AndroidAlert } from './android-app.interface';
 import { AndroidAppHelperService } from './shared/android-app-helper/android-app-helper.service';
 
-@autobind
 @Component({
   controllerAs: 'vm',
   selector: 'app',
@@ -35,6 +35,7 @@ export class AndroidAppComponent extends AppMainComponent implements OnInit {
   appHelperSvc: AndroidAppHelperService;
   platformSvc: AndroidPlatformService;
   syncSvc: SyncService;
+  telemetrySvc: TelemetryService;
   upgradeSvc: UpgradeService;
 
   darkThemeEnabled = false;
@@ -54,6 +55,7 @@ export class AndroidAppComponent extends AppMainComponent implements OnInit {
     'SettingsService',
     'StoreService',
     'SyncService',
+    'TelemetryService',
     'UpgradeService',
     'UtilityService',
     'WorkingService'
@@ -73,6 +75,7 @@ export class AndroidAppComponent extends AppMainComponent implements OnInit {
     SettingsSvc: SettingsService,
     StoreSvc: StoreService,
     SyncSvc: SyncService,
+    TelemetrySvc: TelemetryService,
     UpgradeSvc: UpgradeService,
     UtilitySvc: UtilityService,
     WorkingSvc: WorkingService
@@ -96,43 +99,50 @@ export class AndroidAppComponent extends AppMainComponent implements OnInit {
 
     this.$interval = $interval;
     this.syncSvc = SyncSvc;
+    this.telemetrySvc = TelemetrySvc;
     this.upgradeSvc = UpgradeSvc;
   }
 
   checkForInstallOrUpgrade(): ng.IPromise<void> {
     // Get current app version
-    return this.platformSvc.getAppVersion().then((appVersion) => {
-      // Get previous app version by first checking both legacy and old versions
-      const localStorageAppVersion = localStorage.getItem('xBrowserSync-mobileAppVersion');
-      return this.$q<string>((resolve) => {
-        window.NativeStorage.getItem('appVersion', resolve, () => resolve());
-      })
-        .then((nativeStorageAppVersion) => {
-          return nativeStorageAppVersion ?? localStorageAppVersion ?? undefined;
-        })
-        .then((legacyAppVersion) => {
-          // If no last upgrade version or legacy app version this is a new install
-          // otherwise set last upgrade version to be legacy version if not set
-          return this.upgradeSvc
-            .getLastUpgradeVersion()
-            .then((lastUpgradeVersion) => {
-              if (angular.isUndefined(lastUpgradeVersion)) {
-                if (angular.isUndefined(legacyAppVersion)) {
-                  return this.handleInstall(appVersion);
-                }
-                return this.upgradeSvc.setLastUpgradeVersion(legacyAppVersion);
-              }
+    return (
+      this.platformSvc
+        .getAppVersion()
+        .then((appVersion) => {
+          // Get previous app version by first checking both legacy and old versions
+          const localStorageAppVersion = localStorage.getItem('xBrowserSync-mobileAppVersion');
+          return this.$q<string>((resolve) => {
+            window.NativeStorage.getItem('appVersion', resolve, () => resolve());
+          })
+            .then((nativeStorageAppVersion) => {
+              return nativeStorageAppVersion ?? localStorageAppVersion ?? undefined;
             })
-            .then(() => {
-              // Upgrade if required
-              return this.upgradeSvc.checkIfUpgradeRequired(appVersion).then((upgradeRequired) => {
-                if (upgradeRequired) {
-                  return this.handleUpgrade(appVersion);
-                }
-              });
+            .then((legacyAppVersion) => {
+              // If no last upgrade version or legacy app version this is a new install
+              // otherwise set last upgrade version to be legacy version if not set
+              return this.upgradeSvc
+                .getLastUpgradeVersion()
+                .then((lastUpgradeVersion) => {
+                  if (angular.isUndefined(lastUpgradeVersion)) {
+                    if (angular.isUndefined(legacyAppVersion)) {
+                      return this.handleInstall(appVersion);
+                    }
+                    return this.upgradeSvc.setLastUpgradeVersion(legacyAppVersion);
+                  }
+                })
+                .then(() => {
+                  // Upgrade if required
+                  return this.upgradeSvc.checkIfUpgradeRequired(appVersion).then((upgradeRequired) => {
+                    if (upgradeRequired) {
+                      return this.handleUpgrade(appVersion);
+                    }
+                  });
+                });
             });
-        });
-    });
+        })
+        // Load i18n strings
+        .finally(() => this.platformSvc.initI18n())
+    );
   }
 
   checkForNewVersion(): void {
@@ -143,7 +153,7 @@ export class AndroidAppComponent extends AppMainComponent implements OnInit {
             return;
           }
 
-          this.alertSvc.setCurrentAlert({
+          this.alertSvc.currentAlert = {
             message: this.platformSvc
               .getI18nString(this.Strings.Alert.AppUpdateAvailable.Message)
               .replace('{version}', `v${newVersion}`),
@@ -151,7 +161,7 @@ export class AndroidAppComponent extends AppMainComponent implements OnInit {
             actionCallback: () => {
               this.platformSvc.openUrl(`${Globals.ReleaseNotesUrlStem}${newVersion}`);
             }
-          } as AndroidAlert);
+          } as AndroidAlert;
         });
       });
     }, 1e3);
@@ -218,6 +228,7 @@ export class AndroidAppComponent extends AppMainComponent implements OnInit {
       });
   }
 
+  @boundMethod
   handleBackButton(event: Event): void {
     if (
       this.utilitySvc.checkCurrentRoute(RoutePath.Bookmark) ||
@@ -240,18 +251,14 @@ export class AndroidAppComponent extends AppMainComponent implements OnInit {
   handleBookmarkShared(sharedBookmark: BookmarkMetadata): void {
     if (!angular.isUndefined(sharedBookmark)) {
       // Set current page as shared bookmark
-      this.platformSvc.currentPage = sharedBookmark;
+      this.platformSvc.sharedBookmark = sharedBookmark;
     }
   }
 
-  handleDeviceReady(success: () => any, failure: () => any): ng.IPromise<any> {
-    // Prime cache for faster startup
-    this.$q.all([this.bookmarkHelperSvc.getCachedBookmarks(), this.settingsSvc.all()]).catch(() => {});
-
-    // Load i18n strings
+  handleDeviceReady(success: () => any, failure: (err: any) => any): ng.IPromise<any> {
     return (
-      this.platformSvc
-        .initI18n()
+      this.$q
+        .resolve()
         .then(() => {
           // Configure events
           document.addEventListener('backbutton', this.handleBackButton, false);
@@ -268,11 +275,10 @@ export class AndroidAppComponent extends AppMainComponent implements OnInit {
           // Check for upgrade or do fresh install
           return this.checkForInstallOrUpgrade();
         })
-
         // Run startup process after install/upgrade
-        .then(this.handleStartup)
-        .then(success)
-        .catch(failure)
+        .then(() => this.handleStartup())
+        .then(() => success())
+        .catch((err) => failure(err))
     );
   }
 
@@ -286,6 +292,7 @@ export class AndroidAppComponent extends AppMainComponent implements OnInit {
     );
   }
 
+  @boundMethod
   handleKeyboardDidShow(event: any): void {
     document.body.style.height = `calc(100% - ${event.keyboardHeight}px)`;
     setTimeout(() => {
@@ -293,10 +300,12 @@ export class AndroidAppComponent extends AppMainComponent implements OnInit {
     }, 100);
   }
 
+  @boundMethod
   handleKeyboardWillHide(): void {
     document.body.style.removeProperty('height');
   }
 
+  @boundMethod
   handleResume(): ng.IPromise<void> {
     // Check if sync enabled and reset network disconnected flag
     return this.utilitySvc.isSyncEnabled().then((syncEnabled) => {
@@ -322,39 +331,12 @@ export class AndroidAppComponent extends AppMainComponent implements OnInit {
 
     return this.$q
       .all([
-        this.platformSvc.getAppVersionName(),
-        this.platformSvc.getCurrentLocale(),
         this.settingsSvc.checkForAppUpdates(),
-        this.storeSvc.get([StoreKey.LastUpdated, StoreKey.SyncId]),
-        this.utilitySvc.getServiceUrl(),
-        this.utilitySvc.getSyncVersion(),
+        this.settingsSvc.telemetryEnabled(),
         this.utilitySvc.isSyncEnabled()
       ])
-      .then((result) => {
-        // Add useful debug info to beginning of trace log
-        const [appVersion, currentLocale, checkForAppUpdates, storeContent, serviceUrl, syncVersion, syncEnabled] =
-          result;
-        const debugInfo = angular.copy(storeContent) as any;
-        debugInfo.appVersion = appVersion;
-        debugInfo.checkForAppUpdates = checkForAppUpdates;
-        debugInfo.currentLocale = currentLocale;
-        debugInfo.platform = {
-          name: window.device.platform,
-          device: `${window.device.manufacturer} ${window.device.model}`
-        };
-        debugInfo.serviceUrl = serviceUrl;
-        debugInfo.syncEnabled = syncEnabled;
-        debugInfo.syncVersion = syncVersion;
-        this.logSvc.logInfo(
-          Object.keys(debugInfo)
-            .filter((key) => {
-              return debugInfo[key] != null;
-            })
-            .reduce((prev, current) => {
-              prev[current] = debugInfo[current];
-              return prev;
-            }, {})
-        );
+      .then((data) => {
+        const [checkForAppUpdates, telemetryEnabled, syncEnabled] = data;
 
         // Check for new app version
         if (checkForAppUpdates) {
@@ -364,6 +346,11 @@ export class AndroidAppComponent extends AppMainComponent implements OnInit {
         // Exit if sync not enabled
         if (!syncEnabled) {
           return;
+        }
+
+        // Submit telemetry if enabled
+        if (telemetryEnabled) {
+          this.$timeout(() => this.telemetrySvc.submitTelemetry(), 5e3);
         }
 
         // Check if a bookmark was shared
@@ -378,6 +365,7 @@ export class AndroidAppComponent extends AppMainComponent implements OnInit {
       });
   }
 
+  @boundMethod
   handleTouchStart(event: Event): void {
     // Blur focus (and hide keyboard) when pressing out of text fields
     if (!this.utilitySvc.isTextInput(event.target as Element) && this.utilitySvc.isTextInput(document.activeElement)) {
@@ -395,18 +383,12 @@ export class AndroidAppComponent extends AppMainComponent implements OnInit {
     // Bind to cordova device events
     return (
       this.$q<void>((resolve, reject) => {
-        document.addEventListener(
-          'deviceready',
-          () => {
-            this.handleDeviceReady(resolve, reject);
-          },
-          false
-        );
+        document.addEventListener('deviceready', () => this.handleDeviceReady(resolve, reject), false);
         document.addEventListener('resume', this.handleResume, false);
       })
         .then(() => {
           // If bookmark was shared, switch to bookmark view
-          if (!angular.isUndefined(this.platformSvc.currentPage)) {
+          if (!angular.isUndefined(this.platformSvc.sharedBookmark)) {
             return this.appHelperSvc.switchView(RoutePath.Bookmark);
           }
         })
@@ -415,6 +397,7 @@ export class AndroidAppComponent extends AppMainComponent implements OnInit {
     );
   }
 
+  @boundMethod
   workingCancelAction(): ng.IPromise<void> {
     this.utilitySvc.broadcastEvent(AppEventType.WorkingCancelAction);
     return this.$q.resolve();

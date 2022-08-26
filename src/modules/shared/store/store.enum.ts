@@ -9,19 +9,18 @@ enum StoreKey {
   DisplayHelp = 'displayHelp',
   DisplayOtherSyncsWarning = 'displayOtherSyncsWarning',
   DisplayPermissions = 'displayPermissions',
-  DisplaySearchBarBeneathResults = 'displaySearchBarBeneathResults',
+  DisplayTelemetryCheck = 'displayTelemetryCheck',
   DisplayUpdated = 'displayUpdated',
   DefaultToFolderView = 'defaultToFolderView',
   InstallBackup = 'installBackup',
+  InstallationId = 'installationId',
   LastUpdated = 'lastUpdated',
   LastUpgradeVersion = 'lastUpgradeVersion',
-  Password = 'password',
   RemovedSync = 'removedSync',
-  ServiceUrl = 'serviceUrl',
   SyncBookmarksToolbar = 'syncBookmarksToolbar',
   SyncEnabled = 'syncEnabled',
-  SyncId = 'syncId',
-  SyncVersion = 'syncVersion',
+  SyncInfo = 'syncInfo',
+  TelemetryEnabled = 'telemetryEnabled',
   TraceLog = 'traceLog'
 }
 

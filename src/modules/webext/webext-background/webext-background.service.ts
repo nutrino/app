@@ -1,7 +1,6 @@
 import angular from 'angular';
 import { Injectable } from 'angular-ts-decorators';
-import autobind from 'autobind-decorator';
-import * as detectBrowser from 'detect-browser';
+import { boundMethod } from 'autobind-decorator';
 import browser, { Alarms, Downloads, Notifications } from 'webextension-polyfill';
 import { Alert } from '../../shared/alert/alert.interface';
 import { AlertService } from '../../shared/alert/alert.service';
@@ -23,6 +22,7 @@ import { StoreKey } from '../../shared/store/store.enum';
 import { StoreService } from '../../shared/store/store.service';
 import { Sync } from '../../shared/sync/sync.interface';
 import { SyncService } from '../../shared/sync/sync.service';
+import { TelemetryService } from '../../shared/telemetry/telemetry.service';
 import { UpgradeService } from '../../shared/upgrade/upgrade.service';
 import { UtilityService } from '../../shared/utility/utility.service';
 import { ChromiumBookmarkService } from '../chromium/shared/chromium-bookmark/chromium-bookmark.service';
@@ -35,7 +35,6 @@ import {
   SyncBookmarksMessage
 } from '../webext.interface';
 
-@autobind
 @Injectable('WebExtBackgroundService')
 export class WebExtBackgroundService {
   Strings = require('../../../../res/strings/en.json');
@@ -54,6 +53,7 @@ export class WebExtBackgroundService {
   settingsSvc: SettingsService;
   storeSvc: StoreService;
   syncSvc: SyncService;
+  telemetrySvc: TelemetryService;
   upgradeSvc: UpgradeService;
   utilitySvc: UtilityService;
 
@@ -74,6 +74,7 @@ export class WebExtBackgroundService {
     'SettingsService',
     'StoreService',
     'SyncService',
+    'TelemetryService',
     'UpgradeService',
     'UtilityService'
   ];
@@ -92,6 +93,7 @@ export class WebExtBackgroundService {
     SettingsSvc: SettingsService,
     StoreSvc: StoreService,
     SyncSvc: SyncService,
+    TelemetrySvc: TelemetryService,
     UpgradeSvc: UpgradeService,
     UtilitySvc: UtilityService
   ) {
@@ -109,6 +111,7 @@ export class WebExtBackgroundService {
     this.settingsSvc = SettingsSvc;
     this.storeSvc = StoreSvc;
     this.syncSvc = SyncSvc;
+    this.telemetrySvc = TelemetrySvc;
     this.upgradeSvc = UpgradeSvc;
     this.utilitySvc = UtilitySvc;
 
@@ -144,7 +147,7 @@ export class WebExtBackgroundService {
     }
 
     // Exit if sync not enabled
-    return this.syncSvc.executeSync().catch(this.checkForSyncUpdatesFailed);
+    return this.syncSvc.executeSync().catch((err) => this.checkForSyncUpdatesFailed(err));
   }
 
   checkForSyncUpdatesFailed(err: Error): void {
@@ -221,7 +224,7 @@ export class WebExtBackgroundService {
     return browser.downloads.search({ id }).then((results) => {
       const [download] = results;
       if ((download ?? undefined) === undefined) {
-        this.logSvc.logWarning('Unable to find download');
+        this.logSvc.logWarning('Failed to find download');
         return;
       }
       return download;
@@ -234,56 +237,37 @@ export class WebExtBackgroundService {
     // Before initialising, check if upgrade required
     this.platformSvc
       .getAppVersion()
-      .then(this.upgradeSvc.checkIfUpgradeRequired)
+      .then((appVersion) => this.upgradeSvc.checkIfUpgradeRequired(appVersion))
       .then((upgradeRequired) => upgradeRequired && this.upgradeExtension())
       .then(() =>
         this.$q
           .all([
-            this.platformSvc.getAppVersionName(),
-            this.platformSvc.getCurrentLocale(),
-            this.settingsSvc.all(),
-            this.storeSvc.get([StoreKey.LastUpdated, StoreKey.SyncId]),
-            this.utilitySvc.getServiceUrl(),
-            this.utilitySvc.getSyncVersion(),
+            this.settingsSvc.checkForAppUpdates(),
+            this.settingsSvc.telemetryEnabled(),
             this.utilitySvc.isSyncEnabled()
           ])
           .then((data) => {
-            // Add useful debug info to beginning of trace log
-            const [appVersion, currentLocale, settings, storeContent, serviceUrl, syncVersion, syncEnabled] = data;
-            const debugInfo = angular.copy(storeContent) as any;
-            debugInfo.appVersion = appVersion;
-            debugInfo.checkForAppUpdates = settings.checkForAppUpdates;
-            debugInfo.currentLocale = currentLocale;
-            debugInfo.platform = detectBrowser.detect();
-            debugInfo.platform.name = this.utilitySvc.getBrowserName();
-            debugInfo.serviceUrl = serviceUrl;
-            debugInfo.syncBookmarksToolbar = settings.syncBookmarksToolbar;
-            debugInfo.syncEnabled = syncEnabled;
-            debugInfo.syncVersion = syncVersion;
-            this.logSvc.logInfo(
-              Object.keys(debugInfo)
-                .filter((key) => {
-                  return debugInfo[key] != null;
-                })
-                .reduce((prev, current) => {
-                  prev[current] = debugInfo[current];
-                  return prev;
-                }, {})
-            );
-
             // Update browser action icon
+            const [checkForAppUpdates, telemetryEnabled, syncEnabled] = data;
             this.platformSvc.refreshNativeInterface(syncEnabled);
 
-            // Check for new app version after a delay
-            if (settings.checkForAppUpdates) {
-              this.$timeout(this.checkForNewVersion, 5e3);
+            // Check for new app version
+            if (checkForAppUpdates) {
+              this.$timeout(() => this.checkForNewVersion(), 5e3);
             }
 
-            // Enable sync and check for updates after a delay to allow for initialising network connection
+            // Enable sync and check for updates
             if (!syncEnabled) {
               return;
             }
-            return this.syncSvc.enableSync().then(() => this.$timeout(this.checkForSyncUpdatesOnStartup, 5e3));
+            return this.syncSvc.enableSync().then(() => {
+              this.$timeout(() => this.checkForSyncUpdatesOnStartup(), 3e3);
+
+              // Submit telemetry if enabled
+              if (telemetryEnabled) {
+                this.$timeout(() => this.telemetrySvc.submitTelemetry(), 4e3);
+              }
+            });
           })
       );
   }
@@ -325,6 +309,7 @@ export class WebExtBackgroundService {
     );
   }
 
+  @boundMethod
   onAlarm(alarm: Alarms.Alarm): void {
     switch (alarm?.name) {
       case Globals.Alarms.AutoBackUp.Name:
@@ -340,9 +325,10 @@ export class WebExtBackgroundService {
   onInstall(event: InputEvent): void {
     // Check if fresh install needed
     const details = angular.element(event.currentTarget as Element).data('details');
-    (details?.reason === 'install' ? this.installExtension() : this.$q.resolve()).then(this.init);
+    (details?.reason === 'install' ? this.installExtension() : this.$q.resolve()).then(() => this.init());
   }
 
+  @boundMethod
   onNotificationClicked(notificationId: string): void {
     // Execute the event handler if one exists and then remove
     const notificationClickHandler = this.notificationClickHandlers.find((x) => {
@@ -354,6 +340,7 @@ export class WebExtBackgroundService {
     }
   }
 
+  @boundMethod
   onNotificationClosed(notificationId: string): void {
     // Remove the handler for this notification if one exists
     const index = this.notificationClickHandlers.findIndex((x) => {
@@ -364,6 +351,7 @@ export class WebExtBackgroundService {
     }
   }
 
+  @boundMethod
   onMessage(message: Message): Promise<any> {
     // Use native Promise not $q otherwise browser.runtime.sendMessage will return immediately in Firefox
     return new Promise((resolve, reject) => {
@@ -552,7 +540,7 @@ export class WebExtBackgroundService {
     // Run upgrade process and display notification to user
     return this.platformSvc
       .getAppVersion()
-      .then(this.upgradeSvc.upgrade)
+      .then((appVersion) => this.upgradeSvc.upgrade(appVersion))
       .then(() => {
         return this.platformSvc.getAppVersionName().then((appVersion) => {
           const alert: Alert = {

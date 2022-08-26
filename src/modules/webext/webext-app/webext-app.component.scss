@@ -5,31 +5,30 @@ body {
 }
 
 app {
-  .container {
-    &.search,
-    &.settings {
-      .view,
-      .view-content {
-        max-height: 37rem;
+  .icon-button-container {
+    icon-button {
+      margin-top: -0.65em !important;
+
+      & > div {
+        height: 1.3em !important;
+        width: 1.3em !important;
       }
     }
+  }
 
+  .container {
     &.search {
+      .view,
+      .view-content {
+        max-height: 599px;
+      }
+
       .view {
         height: auto;
         width: 38rem;
 
         .header-panel {
-          display: flex;
           flex-direction: row-reverse;
-
-          button {
-            flex: none;
-
-            &.btn-settings {
-              float: none;
-            }
-          }
         }
       }
     }
@@ -40,11 +39,27 @@ app {
           bottom: -0.75rem;
         }
       }
+
+      .view,
+      .view-content {
+        max-height: 37rem;
+      }
     }
 
     .view {
       height: 37rem;
       width: 23rem;
     }
+  }
+
+  .header-panel {
+    height: 1.7rem;
+  }
+}
+
+app-search {
+  .btn-clear {
+    margin-top: -0.6em;
+    right: 0.5em;
   }
 }

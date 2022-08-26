@@ -1,6 +1,6 @@
 import angular from 'angular';
 import { Injectable } from 'angular-ts-decorators';
-import autobind from 'autobind-decorator';
+import { boundMethod } from 'autobind-decorator';
 import { AlertType } from '../../alert/alert.enum';
 import { Alert } from '../../alert/alert.interface';
 import { AlertService } from '../../alert/alert.service';
@@ -8,7 +8,6 @@ import { PlatformService } from '../../global-shared.interface';
 import { LogService } from '../../log/log.service';
 import * as Errors from '../errors';
 
-@autobind
 @Injectable('ExceptionHandler')
 export class ExceptionHandlerService {
   Strings = require('../../../../../res/strings/en.json');
@@ -65,9 +64,9 @@ export class ExceptionHandlerService {
         alertMessage.title = this.platformSvc.getI18nString(this.Strings.Error.DailyNewSyncLimitReached.Title);
         alertMessage.message = this.platformSvc.getI18nString(this.Strings.Error.DailyNewSyncLimitReached.Message);
         break;
-      case Errors.ClientDataNotFoundError:
-        alertMessage.title = this.platformSvc.getI18nString(this.Strings.Error.MissingClientData.Title);
-        alertMessage.message = this.platformSvc.getI18nString(this.Strings.Error.MissingClientData.Message);
+      case Errors.IncompleteSyncInfoError:
+        alertMessage.title = this.platformSvc.getI18nString(this.Strings.Error.IncompleteSyncInfo.Title);
+        alertMessage.message = this.platformSvc.getI18nString(this.Strings.Error.IncompleteSyncInfo.Message);
         break;
       case Errors.SyncNotFoundError:
         alertMessage.title = this.platformSvc.getI18nString(this.Strings.Error.SyncRemoved.Title);
@@ -160,6 +159,7 @@ export class ExceptionHandlerService {
     return alertMessage;
   }
 
+  @boundMethod
   handleError(error: Errors.BaseError, cause?: string, displayAlert = true): void {
     switch (error.constructor) {
       case Errors.HttpRequestAbortedError:
@@ -185,7 +185,7 @@ export class ExceptionHandlerService {
     }
 
     if (displayAlert) {
-      this.alertSvc.setCurrentAlert(this.getAlertFromError(error));
+      this.alertSvc.currentAlert = this.getAlertFromError(error);
     }
   }
 

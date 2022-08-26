@@ -1,10 +1,8 @@
 import { Component, OnInit } from 'angular-ts-decorators';
-import autobind from 'autobind-decorator';
-import { ApiServiceStatus } from '../../../shared/api/api.enum';
-import { ApiServiceInfo } from '../../../shared/api/api.interface';
-import { BookmarkHelperService } from '../../../shared/bookmark/bookmark-helper/bookmark-helper.service';
+import { boundMethod } from 'autobind-decorator';
+import { ApiServiceType } from '../../../shared/api/api.enum';
+import { ApiSyncInfo } from '../../../shared/api/api.interface';
 import { PlatformService } from '../../../shared/global-shared.interface';
-import { NetworkService } from '../../../shared/network/network.service';
 import { StoreKey } from '../../../shared/store/store.enum';
 import { StoreService } from '../../../shared/store/store.service';
 import { SyncService } from '../../../shared/sync/sync.service';
@@ -13,7 +11,6 @@ import { WorkingService } from '../../../shared/working/working.service';
 import { AppEventType, RoutePath } from '../../app.enum';
 import { AppHelperService } from '../../shared/app-helper/app-helper.service';
 
-@autobind
 @Component({
   controllerAs: 'vm',
   selector: 'syncSettings',
@@ -26,22 +23,17 @@ export class SyncSettingsComponent implements OnInit {
   $q: ng.IQService;
   $timeout: ng.ITimeoutService;
   appHelperSvc: AppHelperService;
-  bookmarkHelperSvc: BookmarkHelperService;
-  networkSvc: NetworkService;
   platformSvc: PlatformService;
   storeSvc: StoreService;
   syncSvc: SyncService;
   utilitySvc: UtilityService;
   workingSvc: WorkingService;
 
-  apiServiceStatus = ApiServiceStatus;
-  dataUsageProgressWidth = 0;
+  apiServiceType = ApiServiceType;
   displayQr = false;
   lastUpdated: string;
   nextUpdate: string;
-  serviceInfo: ApiServiceInfo;
-  syncDataSize: number;
-  syncDataUsed: number;
+  selectedServiceType: ApiServiceType;
   syncEnabled: boolean;
   syncId: string;
   syncIdCopied = false;
@@ -52,8 +44,6 @@ export class SyncSettingsComponent implements OnInit {
     '$timeout',
     '$scope',
     'AppHelperService',
-    'BookmarkHelperService',
-    'NetworkService',
     'PlatformService',
     'StoreService',
     'SyncService',
@@ -65,8 +55,6 @@ export class SyncSettingsComponent implements OnInit {
     $timeout: ng.ITimeoutService,
     $scope: ng.IScope,
     AppHelperSvc: AppHelperService,
-    BookmarkHelperSvc: BookmarkHelperService,
-    NetworkSvc: NetworkService,
     PlatformSvc: PlatformService,
     StoreSvc: StoreService,
     SyncSvc: SyncService,
@@ -76,8 +64,6 @@ export class SyncSettingsComponent implements OnInit {
     this.$q = $q;
     this.$timeout = $timeout;
     this.appHelperSvc = AppHelperSvc;
-    this.bookmarkHelperSvc = BookmarkHelperSvc;
-    this.networkSvc = NetworkSvc;
     this.platformSvc = PlatformSvc;
     this.storeSvc = StoreSvc;
     this.syncSvc = SyncSvc;
@@ -87,7 +73,6 @@ export class SyncSettingsComponent implements OnInit {
     $scope.$on(AppEventType.SyncDisabled, () => {
       this.syncEnabled = false;
     });
-    $scope.$on(AppEventType.RefreshSyncDataUsage, () => this.refreshSyncDataUsage());
   }
 
   checkForSyncUpdates(): ng.IPromise<void> {
@@ -115,73 +100,42 @@ export class SyncSettingsComponent implements OnInit {
       });
   }
 
+  @boundMethod
   closeQrPanel(): void {
     this.displayQr = false;
   }
 
+  @boundMethod
   disableSync(): void {
     this.platformSvc.disableSync().then(() => this.appHelperSvc.switchView(RoutePath.Login));
   }
 
+  @boundMethod
   displayQrPanel(): void {
     this.displayQr = true;
   }
 
   ngOnInit(): void {
-    // Get required view model data from store
     this.$q
       .all([
-        this.storeSvc.get<string>(StoreKey.SyncId),
-        this.utilitySvc.getServiceUrl(),
+        this.storeSvc.get<ApiSyncInfo>(StoreKey.SyncInfo),
+        this.utilitySvc.getCurrentApiServiceType(),
         this.utilitySvc.isSyncEnabled()
       ])
       .then((data) => {
-        const [syncId, serviceUrl, syncEnabled] = data;
-        this.syncId = syncId;
-        this.serviceInfo = {
-          url: serviceUrl
-        };
+        const [syncInfo, selectedServiceType, syncEnabled] = data;
+        this.selectedServiceType = selectedServiceType;
+        this.syncId = syncInfo?.id;
         this.syncEnabled = syncEnabled;
 
         // Check for available sync updates on non-mobile platforms
         if (this.syncEnabled && !this.utilitySvc.isMobilePlatform(this.platformSvc.platformName)) {
           this.checkForSyncUpdates();
         }
-
-        // Update service status and display info
-        this.refreshServiceStatus()
-          // Set service message links to open in new tabs
-          .then(() => this.appHelperSvc.attachClickEventsToNewTabLinks(document.querySelector('.service-message')))
-          // Refresh data usage meter
-          .then(() => this.refreshSyncDataUsage());
       });
   }
 
-  refreshServiceStatus(): ng.IPromise<void> {
-    return this.appHelperSvc.formatServiceInfo().then((formattedServiceInfo) => {
-      Object.assign(this.serviceInfo, formattedServiceInfo);
-    });
-  }
-
-  refreshSyncDataUsage(): ng.IPromise<void> {
-    return this.utilitySvc.isSyncEnabled().then((syncEnabled) => {
-      // Return if not synced
-      if (!syncEnabled) {
-        return;
-      }
-
-      // Get bookmarks sync size and calculate sync data percentage used
-      return this.syncSvc.getSyncSize().then((bookmarksSyncSize) => {
-        this.syncDataSize = bookmarksSyncSize / 1024;
-        this.syncDataUsed = Math.ceil((this.syncDataSize / this.serviceInfo.maxSyncSize) * 150);
-        this.$timeout(() => {
-          // Add a slight delay when setting progress bar width to ensure transitions are enabled
-          this.dataUsageProgressWidth = this.syncDataUsed;
-        }, 250);
-      });
-    });
-  }
-
+  @boundMethod
   syncUpdates() {
     // Display loading panel and sync updates
     this.workingSvc.show();

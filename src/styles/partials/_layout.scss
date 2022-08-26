@@ -1,5 +1,7 @@
 .container {
+  display: flex;
   height: 100%;
+  justify-content: center;
   margin: 0;
   max-width: 100%;
   padding: 0;
@@ -23,26 +25,13 @@
 }
 
 .header-panel {
+  align-items: center;
   display: flex;
+  flex: 0 0 auto;
   font-size: 1.3rem;
   justify-content: space-between;
   margin-bottom: 0.75rem;
   position: relative;
-
-  .btn-icon {
-    font-size: 1.3em;
-    height: 1em;
-    line-height: 1.2em;
-
-    &.btn-close,
-    &.btn-settings {
-      float: right;
-    }
-
-    i {
-      vertical-align: middle;
-    }
-  }
 }
 
 .overlay {
@@ -141,6 +130,7 @@
   border-width: 0;
   color: var(--color-well-text);
   margin-bottom: 0.75rem;
+  overflow: hidden;
   padding: 1rem 1.25rem;
 
   a {

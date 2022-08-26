@@ -251,6 +251,16 @@
         "default": "Sincronización fallida"
       }
     },
+    "IncompleteSyncInfo": {
+      "Message": {
+        "key": "Error_IncompleteSyncInfo_Message",
+        "default": "No se han podido encontrar las credenciales almacenadas. Vuelva a habilitar la sincronización y vuelva a intentarlo."
+      },
+      "Title": {
+        "key": "Error_IncompleteSyncInfo_Title",
+        "default": "Faltan credenciales"
+      }
+    },
     "InvalidCredentials": {
       "Message": {
         "key": "Error_InvalidCredentials_Message",
@@ -289,16 +299,6 @@
       "Title": {
         "key": "Error_LocalSyncError_Title",
         "default": "Error de sincronización"
-      }
-    },
-    "MissingClientData": {
-      "Message": {
-        "key": "Error_MissingClientData_Message",
-        "default": "No se han podido encontrar las credenciales almacenadas. Vuelva a habilitar la sincronización y vuelva a intentarlo."
-      },
-      "Title": {
-        "key": "Error_MissingClientData_Title",
-        "default": "Faltan las credenciales"
       }
     },
     "NetworkConnection": {
@@ -1220,6 +1220,16 @@
             "default": "<p>Habilitar esta configuración reemplazará los marcadores actualmente en la barra de herramientas de marcadores con sus marcadores sincronizados.</p><p>¿Está seguro de continuar?</p>"
           }
         },
+        "Telemetry": {
+          "Label": {
+            "key": "View_Settings_Prefs_Telemetry_Label",
+            "default": "Habilitar telemetría"
+          },
+          "Description": {
+            "key": "View_Settings_Prefs_Telemetry_Description",
+            "default": "Ocasionalmente, envíe datos técnicos anónimos para ayudar a mejorar xBrowserSync."
+          }
+        },
         "Title": {
           "key": "View_Settings_Prefs_Title",
           "default": "Preferencias"
@@ -1334,6 +1344,16 @@
       "Content": {
         "key": "View_SyncRemoved_Content",
         "default": "<p>No se pudo encontrar su sincronización y puede que se haya eliminado por inactividad.</p><p>Necesitará crear una nueva sincronización, pero primero haga clic en el botón de abajo para descargar una copia de seguridad de sus datos sincronizados que puede restaurar a su nueva sincronización.</p>"
+      }
+    },
+    "TelemetryCheck": {
+      "Title": {
+        "key": "View_TelemetryCheck_Title",
+        "default": "¿Enviar telemetría anónima?"
+      },
+      "Content": {
+        "key": "View_TelemetryCheck_Content",
+        "default": "<p>xBrowserSync es diferente a las aplicaciones tradicionales, ya que es una herramienta completamente anónima que prioriza la privacidad. Mantener una herramienta de este tipo es un desafío, ya que no tenemos acceso a los datos de los usuarios para ayudar a determinar la mejor manera de implementar nuestros recursos limitados. Por lo tanto, solicitamos su permiso para enviar ocasionalmente datos técnicos anónimos para ayudarnos a mejorar xBrowserSync.</p><p>Estos datos de telemetría no incluyen ningún dato personal o de identificación, ni incluyen ninguno de sus datos de sincronización cifrados y nunca compartido con terceros (puede optar por participar o no en cualquier momento en el panel de Configuración).</p>"
       }
     },
     "Updated": {

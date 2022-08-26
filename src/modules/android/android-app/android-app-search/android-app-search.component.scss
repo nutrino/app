@@ -15,14 +15,8 @@ app-search {
       }
     }
 
-    &.folder {
-      &.open > .bookmark-content > .bookmark-heading::after {
-        @include icon('\f106');
-      }
-
-      & > .bookmark-content > .bookmark-heading:not(.opening)::after {
-        opacity: 0.6;
-      }
+    &.folder > .bookmark-content > .bookmark-heading:not(.opening)::after {
+      opacity: 0.6;
     }
   }
 
@@ -35,34 +29,31 @@ app-search {
   .header-panel {
     display: flex;
     flex-direction: row-reverse;
-
-    .btn-icon {
-      line-height: initial;
-    }
-
-    .search-form {
-      .btn-clear {
-        font-size: 0.7em;
-      }
-
-      .lookahead-container .lookahead::after {
-        font-size: 0.7em;
-      }
-    }
   }
 
+  .btn-add-bookmark {
+    bottom: 2rem;
+    position: fixed;
+    right: 1rem;
+    z-index: 1000;
+  }
+
+  /* stylelint-disable-next-line selector-class-pattern */
   .ptr--ptr {
     box-shadow: none !important;
 
+    /* stylelint-disable-next-line selector-class-pattern */
     .ptr--box {
       margin: 0;
       padding: 15px;
     }
 
+    /* stylelint-disable-next-line selector-class-pattern */
     .ptr--icon {
       display: none;
     }
 
+    /* stylelint-disable-next-line selector-class-pattern */
     .ptr--text {
       color: var(--color-pull-to-refresh-link);
       font-size: 0.9rem;
@@ -86,10 +77,6 @@ app-search {
       .bookmark-tree-container,
       .search-results-container {
         padding-top: 0.75rem;
-      }
-
-      .btn-fab.fixed {
-        bottom: 5rem;
       }
     }
   }

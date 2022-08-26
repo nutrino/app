@@ -1,4 +1,4 @@
-import { ApiServiceStatus } from './api.enum';
+import { ApiServiceStatus, ApiServiceType } from './api.enum';
 
 export interface ApiCreateBookmarksRequest {
   version: string;
@@ -29,7 +29,7 @@ export interface ApiService {
   createNewSync: () => ng.IPromise<ApiCreateBookmarksResponse>;
   getBookmarks: () => ng.IPromise<ApiGetBookmarksResponse>;
   getBookmarksLastUpdated: (skipNetworkConnectionCheck?: boolean) => ng.IPromise<ApiGetLastUpdatedResponse>;
-  getBookmarksVersion: (syncId: string) => ng.IPromise<ApiGetSyncVersionResponse>;
+  getSyncVersion: (syncId: string) => ng.IPromise<ApiGetSyncVersionResponse>;
   updateBookmarks: (
     encryptedBookmarks: string,
     updateSyncVersion?: boolean,
@@ -38,19 +38,19 @@ export interface ApiService {
 }
 
 export interface ApiServiceInfo {
-  location?: string;
-  maxSyncSize?: number;
-  message?: string;
   status?: ApiServiceStatus;
-  url?: string;
-  version?: string;
 }
 
-export interface ApiServiceInfoResponse {
-  location?: string;
-  maxSyncSize?: number;
-  message?: string;
-  status: ApiServiceStatus;
+export interface ApiServiceInfoResponse {}
+
+export enum ApiServiceNames {
+  XbrowsersyncService = 'ApiXbrowsersyncService'
+}
+
+export interface ApiSyncInfo {
+  id?: string;
+  password?: string;
+  serviceType: ApiServiceType;
   version?: string;
 }
 

@@ -251,6 +251,16 @@
         "default": "Synkronointi epäonnistui"
       }
     },
+    "IncompleteSyncInfo": {
+      "Message": {
+        "key": "Error_IncompleteSyncInfo_Message",
+        "default": "Tallennettuja tunnistetietoja ei löytynyt. Ota synkronointi uudelleen käyttöön ja yritä uudelleen."
+      },
+      "Title": {
+        "key": "Error_IncompleteSyncInfo_Title",
+        "default": "Tunnistetiedot puuttuvat"
+      }
+    },
     "InvalidCredentials": {
       "Message": {
         "key": "Error_InvalidCredentials_Message",
@@ -289,16 +299,6 @@
       "Title": {
         "key": "Error_LocalSyncError_Title",
         "default": "Synkronointivirhe"
-      }
-    },
-    "MissingClientData": {
-      "Message": {
-        "key": "Error_MissingClientData_Message",
-        "default": "Tallennettuja tunnistetietoja ei löytynyt. Ota synkronointi uudelleen käyttöön ja yritä uudelleen."
-      },
-      "Title": {
-        "key": "Error_MissingClientData_Title",
-        "default": "Tunnistetiedot puuttuvat"
       }
     },
     "NetworkConnection": {
@@ -1220,6 +1220,16 @@
             "default": "<p>Tämän asetuksen käyttöönotto korvaa kirjanmerkit, jotka ovat tällä hetkellä kirjanmerkkipalkissasi.</p><p>Jatketaanko?</p>"
           }
         },
+        "Telemetry": {
+          "Label": {
+            "key": "View_Settings_Prefs_Telemetry_Label",
+            "default": "Käytä telemetriaa"
+          },
+          "Description": {
+            "key": "View_Settings_Prefs_Telemetry_Description",
+            "default": "Lähetä ajoittain nimettömiä teknisiä tietoja xBrowserSyncin parantamiseksi."
+          }
+        },
         "Title": {
           "key": "View_Settings_Prefs_Title",
           "default": "Asetukset"
@@ -1334,6 +1344,16 @@
       "Content": {
         "key": "View_SyncRemoved_Content",
         "default": "<p>Synkronointiasi ei löydy ja se on saatettu poistaa käyttämättömänä.</p><p>Sinun on luotava uusi synkronointi. Jos haluat säilyttää tietosi, tallenna varmuuskopio synkronoiduista tiedoistasi klikkaamalla alla olevaa painiketta ja lopuksi palauta varmuuskopio uuteen synkronointiisi.</p>"
+      }
+    },
+    "TelemetryCheck": {
+      "Title": {
+        "key": "View_TelemetryCheck_Title",
+        "default": "Lähetetäänkö nimettömiä telemetriatietoja?"
+      },
+      "Content": {
+        "key": "View_TelemetryCheck_Content",
+        "default": "<p>Perinteisistä sovelluksista poiketen xBrowserSync on täysin anonyymi työkalu, joka asettaa yksityisyyden etusijalle. Tällaisen työkalun ylläpito on haastavaa, koska emme näe käyttäjätietoja, joiden avulla voisime kohdentaa rajallisia resursseja tehokkaammin. Tämän vuoksi pyydämme lupaasi nimettömien teknisten tietojen ajoittaiseen lähetykseen xBrowserSyncin parantamiseksi.</p><p>Nämä telemetriatiedot eivät sisällä mitään henkilökohtaisia tai tunnistettavia tietoja tai salattuja synkronointitietoja, eikä niitä koskaan jaeta ulkopuolisille tahoille (voit estää tietojen lähetyksen asetuksista koska tahansa).</p>"
       }
     },
     "Updated": {

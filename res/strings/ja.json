@@ -251,6 +251,16 @@
         "default": "同期に失敗しました"
       }
     },
+    "IncompleteSyncInfo": {
+      "Message": {
+        "key": "Error_IncompleteSyncInfo_Message",
+        "default": "保存された資格情報が見つかりません。同期を再度有効にして再度お試し下さい。"
+      },
+      "Title": {
+        "key": "Error_IncompleteSyncInfo_Title",
+        "default": "資格情報がありません"
+      }
+    },
     "InvalidCredentials": {
       "Message": {
         "key": "Error_InvalidCredentials_Message",
@@ -289,16 +299,6 @@
       "Title": {
         "key": "Error_LocalSyncError_Title",
         "default": "同期エラー"
-      }
-    },
-    "MissingClientData": {
-      "Message": {
-        "key": "Error_MissingClientData_Message",
-        "default": "保存されたユーザの情報が見つかりません。同期を再度有効にして再度お試し下さい。"
-      },
-      "Title": {
-        "key": "Error_MissingClientData_Title",
-        "default": "ユーザの情報が間違っています"
       }
     },
     "NetworkConnection": {
@@ -1220,6 +1220,16 @@
             "default": "<p>この設定を有効にすると、現在ブックマークツールバーにあるブックマークが同期ブックマークに置き換えられます。</p><p>続行しますか？</p>"
           }
         },
+        "Telemetry": {
+          "Label": {
+            "key": "View_Settings_Prefs_Telemetry_Label",
+            "default": "テレメトリーを有効にする"
+          },
+          "Description": {
+            "key": "View_Settings_Prefs_Telemetry_Description",
+            "default": "xBrowserSyncの改善に役立てるために、匿名の技術データを送信することがあります。"
+          }
+        },
         "Title": {
           "key": "View_Settings_Prefs_Title",
           "default": "環境設定"
@@ -1334,6 +1344,16 @@
       "Content": {
         "key": "View_SyncRemoved_Content",
         "default": "<p>あなたの同期が見つかりませんでした。最近使用されていないために削除された可能性があります。</p><p>新しい同期を作成する必要がありますが、まず下のボタンをクリックして同期データのバックアップをダウンロードし、新しい同期に復元してください。"
+      }
+    },
+    "TelemetryCheck": {
+      "Title": {
+        "key": "View_TelemetryCheck_Title",
+        "default": "匿名のテレメトリを送信しますか？"
+      },
+      "Content": {
+        "key": "View_TelemetryCheck_Content",
+        "default": "<p> xBrowserSyncは、完全に匿名のプライバシー第一のツールであるため、従来のアプリとは異なります。 限られたリソースを最適に展開する方法を決定するのに役立つユーザーデータにアクセスできないため、このようなツールを維持することは困難です。 したがって、xBrowserSyncの改善に役立てるために、匿名の技術データをときどき送信する許可をお願いします。</ p> <p>このテレメトリデータには、個人データや識別データは含まれていません。また、暗号化された同期データも含まれていません。 サードパーティと共有します（[設定]パネルでいつでもオプトインまたはオプトアウトできます）。</ p>"
       }
     },
     "Updated": {

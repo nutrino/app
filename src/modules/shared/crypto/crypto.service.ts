@@ -1,15 +1,12 @@
 import angular from 'angular';
 import { Injectable } from 'angular-ts-decorators';
-import autobind from 'autobind-decorator';
 import base64js from 'base64-js';
 import lzutf8 from 'lzutf8';
-import { ArgumentError, ClientDataNotFoundError, InvalidCredentialsError } from '../errors/errors';
+import { ArgumentError, InvalidCredentialsError } from '../errors/errors';
 import { LogService } from '../log/log.service';
-import { StoreKey } from '../store/store.enum';
 import { StoreService } from '../store/store.service';
 import { UtilityService } from '../utility/utility.service';
 
-@autobind
 @Injectable('CryptoService')
 export class CryptoService {
   $q: ng.IQService;
@@ -44,17 +41,12 @@ export class CryptoService {
       return this.$q.resolve('');
     }
 
-    // Ensure both id and password are in store
-    return this.storeSvc
-      .get([StoreKey.Password, StoreKey.SyncId])
-      .then((storeContent) => {
-        const { password, syncId } = storeContent;
-        if (!password || !syncId) {
-          throw new ClientDataNotFoundError();
-        }
-
+    // Ensure sync credentials
+    return this.utilitySvc
+      .checkSyncCredentialsExist()
+      .then((syncInfo) => {
         // Convert hashed password to bytes
-        const keyData = base64js.toByteArray(password);
+        const keyData = base64js.toByteArray(syncInfo.password);
 
         // Convert base64 encoded encrypted data to bytes and extract initialization vector
         const encryptedBytes = base64js.toByteArray(encryptedData);
@@ -70,7 +62,7 @@ export class CryptoService {
           })
           .then((decryptedBytes) => {
             if (!decryptedBytes) {
-              throw new Error('Unable to decrypt data.');
+              throw new Error('Failed to decrypt data.');
             }
 
             // Uncompress the decrypted data and return
@@ -95,15 +87,11 @@ export class CryptoService {
       throw new ArgumentError('Argument must be a string');
     }
 
-    return this.storeSvc
-      .get<string>(StoreKey.Password)
-      .then((password) => {
-        if (angular.isUndefined(password)) {
-          throw new ClientDataNotFoundError();
-        }
-
+    return this.utilitySvc
+      .checkSyncCredentialsExist()
+      .then((syncInfo) => {
         // Convert hashed password to bytes
-        const keyData = base64js.toByteArray(password);
+        const keyData = base64js.toByteArray(syncInfo.password);
 
         // Generate a random 16 byte initialization vector
         const iv = crypto.getRandomValues(new Uint8Array(16));

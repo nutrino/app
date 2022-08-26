@@ -1,5 +1,3 @@
-const CopyWebpackPlugin = require('copy-webpack-plugin');
-const fs = require('fs');
 const Path = require('path');
 const WebExtConfig = require('./webext.config');
 
@@ -15,7 +13,9 @@ module.exports = (env, argv) => {
     const manifest = JSON.parse(webExtTransfromResult);
     manifest.browser_specific_settings = {
       gecko: {
-        id: '{019b606a-6f61-4d01-af2a-cea528f606da}'
+        id: '{019b606a-6f61-4d01-af2a-cea528f606da}',
+        strict_min_version: '75.0',
+        update_url: 'https://xbrowsersync.github.io/app/firefox-versions.json'
       }
     };
     return JSON.stringify(manifest, null, 2);
@@ -25,11 +25,8 @@ module.exports = (env, argv) => {
     ...webExtConfig,
     entry: {
       ...webExtConfig.entry,
-      app: Path.resolve(__dirname, '../src/modules/webext/firefox/firefox-app/firefox-app.module.ts'),
-      background: Path.resolve(
-        __dirname,
-        '../src/modules/webext/firefox/firefox-background/firefox-background.module.ts'
-      )
+      app: './src/modules/webext/firefox/firefox-app/firefox-app.module.ts',
+      background: './src/modules/webext/firefox/firefox-background/firefox-background.module.ts'
     },
     output: {
       ...webExtConfig.output,

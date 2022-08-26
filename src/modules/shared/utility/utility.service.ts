@@ -2,12 +2,14 @@
 
 import angular from 'angular';
 import { Injectable } from 'angular-ts-decorators';
-import autobind from 'autobind-decorator';
+import { boundMethod } from 'autobind-decorator';
 import { compare } from 'compare-versions';
 import * as detectBrowser from 'detect-browser';
 import XRegExp from 'xregexp';
 import { AppEventType, RoutePath } from '../../app/app.enum';
-import { ClientDataNotFoundError } from '../errors/errors';
+import { ApiServiceType } from '../api/api.enum';
+import { ApiService, ApiServiceNames, ApiSyncInfo } from '../api/api.interface';
+import { IncompleteSyncInfoError } from '../errors/errors';
 import { ExceptionHandler } from '../errors/errors.interface';
 import Globals from '../global-shared.constants';
 import { BrowserName, PlatformType } from '../global-shared.enum';
@@ -17,11 +19,11 @@ import { NetworkService } from '../network/network.service';
 import { StoreKey } from '../store/store.enum';
 import { StoreService } from '../store/store.service';
 
-@autobind
 @Injectable('UtilityService')
 export class UtilityService {
   $exceptionHandler: ExceptionHandler;
   $http: ng.IHttpService;
+  $injector: ng.auto.IInjectorService;
   $location: ng.ILocationService;
   $q: ng.IQService;
   $rootScope: ng.IRootScopeService;
@@ -32,6 +34,7 @@ export class UtilityService {
   static $inject = [
     '$exceptionHandler',
     '$http',
+    '$injector',
     '$location',
     '$q',
     '$rootScope',
@@ -42,6 +45,7 @@ export class UtilityService {
   constructor(
     $exceptionHandler: ExceptionHandler,
     $http: ng.IHttpService,
+    $injector: ng.auto.IInjectorService,
     $location: ng.ILocationService,
     $q: ng.IQService,
     $rootScope: ng.IRootScopeService,
@@ -51,6 +55,7 @@ export class UtilityService {
   ) {
     this.$exceptionHandler = $exceptionHandler;
     this.$http = $http;
+    this.$injector = $injector;
     this.$location = $location;
     this.$q = $q;
     this.$rootScope = $rootScope;
@@ -99,11 +104,12 @@ export class UtilityService {
       });
   }
 
-  checkSyncCredentialsExist(): ng.IPromise<void> {
-    return this.storeSvc.get([StoreKey.Password, StoreKey.SyncId]).then((storeContent) => {
-      if (!storeContent.password || !storeContent.syncId) {
-        throw new ClientDataNotFoundError();
+  checkSyncCredentialsExist(): ng.IPromise<ApiSyncInfo> {
+    return this.storeSvc.get<ApiSyncInfo>(StoreKey.SyncInfo).then((syncInfo) => {
+      if (!syncInfo?.id || !syncInfo?.password) {
+        throw new IncompleteSyncInfoError();
       }
+      return syncInfo;
     });
   }
 
@@ -116,6 +122,26 @@ export class UtilityService {
 
   filterFalsyValues(values: string[]): string[] {
     return values.filter((x) => x);
+  }
+
+  getCurrentApiServiceType(): ng.IPromise<ApiServiceType> {
+    return this.$q.resolve(ApiServiceType.xBrowserSync);
+  }
+
+  getApiService(): ng.IPromise<ApiService> {
+    let apiServiceName: string;
+
+    return this.getCurrentApiServiceType().then((currentServiceType) => {
+      switch (currentServiceType) {
+        case ApiServiceType.xBrowserSync:
+          apiServiceName = ApiServiceNames.XbrowsersyncService;
+          break;
+        default:
+          apiServiceName = ApiServiceNames.XbrowsersyncService;
+      }
+
+      return this.$injector.get(apiServiceName) as ApiService;
+    });
   }
 
   getBrowserName(): string {
@@ -137,20 +163,22 @@ export class UtilityService {
     return year + month + day + hour + minute + second;
   }
 
+  getInstallationId(): ng.IPromise<string> {
+    return this.storeSvc.get<string>(StoreKey.InstallationId).then((installationId) => {
+      if (!installationId) {
+        installationId = this.uuidv4();
+        return this.storeSvc.set(StoreKey.InstallationId, installationId).then(() => installationId);
+      }
+      return installationId;
+    });
+  }
+
   getSemVerAlignedVersion(version: string): string {
     return version.replace(/^[vV]?(\d+\.\d+\.\d+)(\.\d+|-\w+\.\d+)?$/, '$1');
   }
 
-  getServiceUrl(): ng.IPromise<string> {
-    // Get service url from store
-    return this.storeSvc.get<string>(StoreKey.ServiceUrl).then((cachedServiceUrl) => {
-      // If no service url cached, use default
-      return cachedServiceUrl ?? Globals.URL.DefaultServiceUrl;
-    });
-  }
-
   getSyncVersion(): ng.IPromise<string> {
-    return this.storeSvc.get<string>(StoreKey.SyncVersion);
+    return this.storeSvc.get<ApiSyncInfo>(StoreKey.SyncInfo).then((syncInfo) => syncInfo?.version);
   }
 
   getTagArrayFromText(tagText: string): string[] | undefined {
@@ -170,12 +198,13 @@ export class UtilityService {
     return window.crypto.getRandomValues(new Uint32Array(1))[0].toString(36);
   }
 
+  @boundMethod
   handleEvent(eventHandler: (...args: any[]) => any, ...args: any[]): void {
     try {
       this.$q
         .resolve()
         .then(() => eventHandler(...args))
-        .catch(this.$exceptionHandler);
+        .catch((err) => this.$exceptionHandler(err));
     } catch (err) {
       this.$exceptionHandler(err);
     }
@@ -185,6 +214,7 @@ export class UtilityService {
     return !angular.isUndefined(window.navigator.brave);
   }
 
+  @boundMethod
   isMobilePlatform(platformName: string): boolean {
     return platformName === PlatformType.Android;
   }
@@ -408,11 +438,10 @@ export class UtilityService {
     return trimmedText;
   }
 
-  updateServiceUrl(newServiceUrl: string): ng.IPromise<void> {
-    // Update service url in store
-    const url = newServiceUrl.replace(/\/$/, '');
-    return this.storeSvc.set(StoreKey.ServiceUrl, url).then(() => {
-      this.logSvc.logInfo(`Service url changed to: ${url}`);
+  uuidv4(): string {
+    return `${1e7}-${1e3}-${4e3}-${8e3}-${1e11}`.replace(/[018]/g, (c) => {
+      const num = parseInt(c, 10);
+      return (num ^ (crypto.getRandomValues(new Uint8Array(1))[0] & (15 >> (num / 4)))).toString(16);
     });
   }
 }
