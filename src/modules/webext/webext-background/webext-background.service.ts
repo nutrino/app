@@ -253,7 +253,7 @@ export class WebExtBackgroundService {
 
             // Check for new app version
             if (checkForAppUpdates) {
-              this.$timeout(() => this.checkForNewVersion(), 5e3);
+              //this.$timeout(() => this.checkForNewVersion(), 5e3);
             }
 
             // Enable sync and check for updates

@@ -955,7 +955,7 @@ export abstract class WebExtBookmarkService implements BookmarkService {
       eventArgs
     });
     //this.processNativeBookmarkEventsTimeout = this.$timeout(() => this.processNativeBookmarkEventsQueue(), 200);
-	this.processNativeBookmarkEventsTimeout = this.$timeout(() => this.processNativeBookmarkEventsQueue(), 20000);
+    this.processNativeBookmarkEventsTimeout = this.$timeout(() => this.processNativeBookmarkEventsQueue(), 20000);
   }
 
   removeNativeBookmarks(id: string): ng.IPromise<void> {
