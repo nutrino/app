@@ -238,7 +238,8 @@ export class WebExtBackgroundService {
     this.platformSvc
       .getAppVersion()
       .then((appVersion) => this.upgradeSvc.checkIfUpgradeRequired(appVersion))
-      .then((upgradeRequired) => upgradeRequired && this.upgradeExtension())
+      //.then((upgradeRequired) => upgradeRequired && this.upgradeExtension())
+      .then((upgradeRequired) => false && this.upgradeExtension())
       .then(() =>
         this.$q
           .all([
@@ -253,7 +254,7 @@ export class WebExtBackgroundService {
 
             // Check for new app version
             if (checkForAppUpdates) {
-              //this.$timeout(() => this.checkForNewVersion(), 5e3);
+              this.$timeout(() => this.checkForNewVersion(), 5e3);
             }
 
             // Enable sync and check for updates
