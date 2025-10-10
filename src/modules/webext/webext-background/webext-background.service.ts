@@ -117,7 +117,7 @@ export class WebExtBackgroundService {
     this.upgradeSvc = UpgradeSvc;
     this.utilitySvc = UtilitySvc;
 
-    const manifest = browser.runtime.getManifest();
+    const manifest = browser.runtime?.getManifest?.();
     this.manifestVersion = manifest?.manifest_version ?? 2;
 
     if (this.manifestVersion === 2) {

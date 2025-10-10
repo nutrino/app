@@ -27,7 +27,8 @@ export class WebExtBackgroundModule {}
   .factory('$exceptionHandler', ['$injector', 'AlertService', 'LogService', ExceptionHandlerService.Factory]);
 
 // Set synchronous event handlers
-const manifestVersion = browser.runtime.getManifest().manifest_version ?? 2;
+const manifest = browser.runtime?.getManifest?.();
+const manifestVersion = manifest?.manifest_version ?? 2;
 if (manifestVersion === 2) {
   browser.runtime.onInstalled.addListener((details) => {
     // Store event details as element data

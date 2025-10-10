@@ -200,6 +200,7 @@ export class XbrowsersyncLoginComponent implements OnInit {
     const country = countriesList.countries[isoCode];
     if (!country) {
       this.logSvc.logWarning(`No country found matching ISO code: ${isoCode}`);
+      return;
     }
     return country.name;
   }
