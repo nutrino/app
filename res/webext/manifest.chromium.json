@@ -39,14 +39,7 @@
     "unlimitedStorage",
     "offscreen"
   ],
-  "offscreen_documents": [
-    {
-      "matches": ["*://*/*"],
-      "reason": "DOM_SCRAPING",
-      "justification": "Runs the AngularJS background module inside an offscreen document."
-    }
-  ],
   "host_permissions": [],
-  "optional_host_permissions": ["http://*/", "https://*/"],
+  "optional_host_permissions": ["http://*/*", "https://*/*"],
   "incognito": "not_allowed"
 }
