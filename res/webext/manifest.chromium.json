@@ -17,6 +17,13 @@
   "background": {
     "service_worker": "assets/background-sw.js"
   },
+  "offscreen_documents": [
+    {
+      "matches": ["<all_urls>"],
+      "reason": "DOM_SCRAPING",
+      "justification": "Runs the AngularJS background module inside an offscreen document to preserve existing functionality."
+    }
+  ],
   "commands": {
     "_execute_action": {
       "suggested_key": {
