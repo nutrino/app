@@ -46,12 +46,7 @@ export class SyncService {
   storeSvc: StoreService;
   utilitySvc: UtilityService;
 
-  currentSync: Sync;
   providers: SyncProvider[];
-
-  // IMPORTANT: For web extension platforms, as syncQueue is stored in memory it should NEVER be
-  // referenced directly in code running in the context of the browser action, only in the background page
-  syncQueue: Sync[] = [];
 
   static $inject = [
     '$exceptionHandler',
@@ -208,12 +203,10 @@ export class SyncService {
           return this.$q.all(this.providers.map((provider) => provider.disable()));
         })
         .then(() => {
-          // Clear sync queue
-          this.syncQueue = [];
-
-          // Reset syncing flag
-          this.showInterfaceAsSyncing();
-
+          // Clear sync queue and reset syncing flag
+          return this.storeSvc.remove(StoreKey.SyncQueue).then(() => this.showInterfaceAsSyncing());
+        })
+        .then(() => {
           // Update browser action icon
           this.platformSvc.refreshNativeInterface();
           this.logSvc.logInfo('Sync disabled');
@@ -222,17 +215,20 @@ export class SyncService {
   }
 
   enableSync(): ng.IPromise<void> {
-    return this.$q
-      .all([
-        this.storeSvc.remove(StoreKey.RemovedSync),
-        this.storeSvc.set(StoreKey.SyncEnabled, true),
-        this.platformSvc.startSyncUpdateChecks()
-      ])
-      .then(() => {
-        // Enable syncing for registered providers
-        return this.$q.all(this.providers.map((provider) => provider.enable()));
-      })
-      .then(() => this.platformSvc.refreshNativeInterface(true));
+    return this.utilitySvc.isSyncEnabled().then((syncEnabled) => {
+      if (syncEnabled) {
+        return;
+      }
+
+      return this.$q
+        .all([
+          this.storeSvc.remove(StoreKey.RemovedSync),
+          this.storeSvc.set(StoreKey.SyncEnabled, true),
+          this.platformSvc.startSyncUpdateChecks()
+        ])
+        .then(() => this.$q.all(this.providers.map((provider) => provider.enable())))
+        .then(() => this.platformSvc.refreshNativeInterface(true));
+    });
   }
 
   executeSync(isBackgroundSync = false): ng.IPromise<void> {

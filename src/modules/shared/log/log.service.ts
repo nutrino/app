@@ -14,9 +14,6 @@ export class LogService {
   private _$q: ng.IQService;
   private _storeSvc: StoreService;
 
-  private currentLogQueueItem: LogQueueItem;
-  private logItemQueue = [];
-
   static $inject = ['$injector', '$log'];
   constructor($injector: ng.auto.IInjectorService, $log: ng.ILogService) {
     this.$injector = $injector;
@@ -37,8 +34,11 @@ export class LogService {
     return this._storeSvc;
   }
 
-  private addLogItemToQueue(logItem: LogQueueItem): void {
-    this.logItemQueue.push(logItem);
+  private addLogItemToQueue(logItem: LogQueueItem): ng.IPromise<void> {
+    return this._storeSvc.get<LogQueueItem[]>(StoreKey.LogItemQueue).then((queue = []) => {
+      queue.push(logItem);
+      return this._storeSvc.set(StoreKey.LogItemQueue, queue);
+    });
   }
 
   getLogEntries(): ng.IPromise<TraceLogItem[]> {
@@ -52,7 +52,8 @@ export class LogService {
   logError(error: BaseError, message?: string): ng.IPromise<void> {
     // Return if no error supplied or has already been logged
     if (error.logged) {
-      return;
+      //return;
+      return this.$q.resolve();
     }
 
     // Mark this error as logged to prevent duplication in logs
@@ -82,8 +83,7 @@ export class LogService {
         level: LogLevel.Error,
         message,
         error
-      });
-      return this.processLogItemQueue();
+      }).then(() => this.processLogItemQueue());
     });
   }
 
@@ -103,48 +103,61 @@ export class LogService {
 
   logWarning(message: object | string): ng.IPromise<void> {
     if (!message) {
-      return;
+      return this.$q.resolve();
     }
 
     // Output message to console, add to queue and process
     this.$log.warn(message);
-    this.addLogItemToQueue({
+    return this.addLogItemToQueue({
       level: LogLevel.Warn,
       message
-    });
-    return this.processLogItemQueue();
+    }).then(() => this.processLogItemQueue());
   }
 
   private processLogItemQueue(): ng.IPromise<void> {
-    // Return if currently processing or no more items to process
-    if (this.currentLogQueueItem || this.logItemQueue.length === 0) {
-      return this.$q.resolve();
-    }
+    return this._storeSvc.get<LogQueueItem>(StoreKey.CurrentLogQueueItem).then((current) => {
+      if (current) {
+        return;
+      }
 
-    // Get the next log item to process
-    this.currentLogQueueItem = this.logItemQueue.shift();
+      return this.storeSvc.get<LogQueueItem[]>(StoreKey.LogItemQueue).then((queue = []) => {
+        if (queue.length === 0) {
+          return;
+        }
 
-    // Format log message
-    let message =
-      typeof this.currentLogQueueItem.message === 'object'
-        ? JSON.stringify(this.currentLogQueueItem.message)
-        : this.currentLogQueueItem.message ?? '';
-    if (this.currentLogQueueItem.error) {
-      message += this.currentLogQueueItem.error.stack
-        ? `${this.currentLogQueueItem.error.stack.replace(/\s+/g, ' ')}`
-        : '';
-    }
+        // Get the next log item to process and lock the queue
+        const currentLogQueueItem = queue.shift();
+        return this.$q
+          .all([
+            this.storeSvc.set(StoreKey.CurrentLogQueueItem, currentLogQueueItem),
+            this.storeSvc.set(StoreKey.LogItemQueue, queue)
+          ])
+          .then(() => {
+            // Format log message
+            let message =
+              typeof currentLogQueueItem.message === 'object'
+                ? JSON.stringify(currentLogQueueItem.message)
+                : currentLogQueueItem.message ?? '';
+            if (currentLogQueueItem.error) {
+              message += currentLogQueueItem.error.stack
+                ? `${currentLogQueueItem.error.stack.replace(/\s+/g, ' ')}`
+                : '';
+            }
 
-    // Add log item to store
-    const logItem: TraceLogItem = {
-      level: this.currentLogQueueItem.level,
-      message,
-      timestamp: new Date().getTime()
-    };
-    return this.storeSvc.set(StoreKey.TraceLog, logItem).then(() => {
-      // Process remaining messages
-      this.currentLogQueueItem = undefined;
-      this.processLogItemQueue();
+            // Add log item to store
+            const logItem: TraceLogItem = {
+              level: currentLogQueueItem.level,
+              message,
+              timestamp: new Date().getTime()
+            };
+            return this.storeSvc.set(StoreKey.TraceLog, logItem).then(() => {
+              // Process remaining messages by unlocking and recursing
+              return this.storeSvc.remove(StoreKey.CurrentLogQueueItem).then(() => {
+                return this.processLogItemQueue();
+              });
+            });
+          });
+      });
     });
   }
 }

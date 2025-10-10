@@ -5,6 +5,8 @@ enum StoreKey {
   BookmarkIdMappings = 'bookmarkIdMappings',
   Bookmarks = 'bookmarks',
   CheckForAppUpdates = 'checkForAppUpdates',
+  CurrentLogQueueItem = 'currentLogQueueItem',
+  CurrentSync = 'currentSync',
   DarkModeEnabled = 'darkModeEnabled',
   DisplayHelp = 'displayHelp',
   DisplayOtherSyncsWarning = 'displayOtherSyncsWarning',
@@ -16,10 +18,12 @@ enum StoreKey {
   InstallationId = 'installationId',
   LastUpdated = 'lastUpdated',
   LastUpgradeVersion = 'lastUpgradeVersion',
+  LogItemQueue = 'logItemQueue',
   RemovedSync = 'removedSync',
   SyncBookmarksToolbar = 'syncBookmarksToolbar',
   SyncEnabled = 'syncEnabled',
   SyncInfo = 'syncInfo',
+  SyncQueue = 'syncQueue',
   TelemetryEnabled = 'telemetryEnabled',
   TraceLog = 'traceLog'
 }
