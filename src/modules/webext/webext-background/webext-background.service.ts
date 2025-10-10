@@ -1,7 +1,7 @@
 import angular from 'angular';
 import { Injectable } from 'angular-ts-decorators';
 import { boundMethod } from 'autobind-decorator';
-import browser, { Alarms, Downloads, Notifications } from 'webextension-polyfill';
+import browser, { Alarms, Downloads, Notifications, Runtime } from 'webextension-polyfill';
 import { Alert } from '../../shared/alert/alert.interface';
 import { AlertService } from '../../shared/alert/alert.service';
 import { BackupRestoreService } from '../../shared/backup-restore/backup-restore.service';
@@ -57,7 +57,9 @@ export class WebExtBackgroundService {
   upgradeSvc: UpgradeService;
   utilitySvc: UtilityService;
 
+  manifestVersion: number;
   notificationClickHandlers: any[] = [];
+  private initPromise?: ng.IPromise<void>;
 
   static $inject = [
     '$exceptionHandler',
@@ -115,10 +117,15 @@ export class WebExtBackgroundService {
     this.upgradeSvc = UpgradeSvc;
     this.utilitySvc = UtilitySvc;
 
-    browser.alarms.onAlarm.addListener(this.onAlarm);
-    browser.notifications.onClicked.addListener(this.onNotificationClicked);
-    browser.notifications.onClosed.addListener(this.onNotificationClosed);
-    browser.runtime.onMessage.addListener(this.onMessage);
+    const manifest = browser.runtime.getManifest();
+    this.manifestVersion = manifest?.manifest_version ?? 2;
+
+    if (this.manifestVersion === 2) {
+      browser.alarms.onAlarm.addListener(this.onAlarm);
+      browser.notifications.onClicked.addListener(this.onNotificationClicked);
+      browser.notifications.onClosed.addListener(this.onNotificationClosed);
+      browser.runtime.onMessage.addListener(this.onMessage);
+    }
   }
 
   checkForNewVersion(): void {
@@ -231,11 +238,15 @@ export class WebExtBackgroundService {
     });
   }
 
-  init(): void {
+  init(): ng.IPromise<void> {
+    if (this.initPromise) {
+      return this.initPromise;
+    }
+
     this.logSvc.logInfo('Starting up');
 
     // Before initialising, check if upgrade required
-    this.platformSvc
+    const initPromise = this.platformSvc
       .getAppVersion()
       .then((appVersion) => this.upgradeSvc.checkIfUpgradeRequired(appVersion))
       //.then((upgradeRequired) => upgradeRequired && this.upgradeExtension())
@@ -270,7 +281,15 @@ export class WebExtBackgroundService {
               }
             });
           })
-      );
+      )
+      .then(() => {});
+
+    this.initPromise = initPromise.catch((error) => {
+      this.initPromise = undefined;
+      throw error;
+    });
+
+    return this.initPromise;
   }
 
   installExtension(): ng.IPromise<void> {
@@ -310,6 +329,12 @@ export class WebExtBackgroundService {
     );
   }
 
+  handleRuntimeInstalled(details?: Runtime.OnInstalledDetailsType): ng.IPromise<void> {
+    const installPromise =
+      details?.reason === 'install' ? this.installExtension() : (this.$q.resolve() as ng.IPromise<void>);
+    return installPromise.then(() => this.init());
+  }
+
   @boundMethod
   onAlarm(alarm: Alarms.Alarm): void {
     switch (alarm?.name) {
@@ -325,8 +350,10 @@ export class WebExtBackgroundService {
 
   onInstall(event: InputEvent): void {
     // Check if fresh install needed
-    const details = angular.element(event.currentTarget as Element).data('details');
-    (details?.reason === 'install' ? this.installExtension() : this.$q.resolve()).then(() => this.init());
+    const details = angular.element(event.currentTarget as Element).data('details') as
+      | Runtime.OnInstalledDetailsType
+      | undefined;
+    this.handleRuntimeInstalled(details);
   }
 
   @boundMethod

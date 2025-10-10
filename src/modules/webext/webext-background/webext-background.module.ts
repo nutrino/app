@@ -27,12 +27,15 @@ export class WebExtBackgroundModule {}
   .factory('$exceptionHandler', ['$injector', 'AlertService', 'LogService', ExceptionHandlerService.Factory]);
 
 // Set synchronous event handlers
-browser.runtime.onInstalled.addListener((details) => {
-  // Store event details as element data
-  const element = document.querySelector('#install');
-  angular.element(element).data('details', details);
-  (document.querySelector('#install') as HTMLButtonElement).click();
-});
-browser.runtime.onStartup.addListener(() => {
-  (document.querySelector('#startup') as HTMLButtonElement).click();
-});
+const manifestVersion = browser.runtime.getManifest().manifest_version ?? 2;
+if (manifestVersion === 2) {
+  browser.runtime.onInstalled.addListener((details) => {
+    // Store event details as element data
+    const element = document.querySelector('#install');
+    angular.element(element).data('details', details);
+    (document.querySelector('#install') as HTMLButtonElement).click();
+  });
+  browser.runtime.onStartup.addListener(() => {
+    (document.querySelector('#startup') as HTMLButtonElement).click();
+  });
+}
