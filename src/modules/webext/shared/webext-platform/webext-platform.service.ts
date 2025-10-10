@@ -46,6 +46,11 @@ export abstract class WebExtPlatformService implements PlatformService {
   };
   refreshInterfaceTimeout: any;
 
+  private getExtensionActionApi(): any {
+    const { action } = browser as unknown as { action?: any };
+    return action ?? browser.browserAction;
+  }
+
   static $inject = [
     '$injector',
     '$interval',
@@ -278,6 +283,12 @@ export abstract class WebExtPlatformService implements PlatformService {
   }
 
   refreshNativeInterface(syncEnabled?: boolean, syncType?: SyncType): ng.IPromise<void> {
+    const actionApi = this.getExtensionActionApi();
+    if (!actionApi) {
+      this.logSvc.logWarning('Unable to refresh extension UI, action API is unavailable.');
+      return this.$q.resolve();
+    }
+
     let iconPath: string;
     let newTitle = this.getI18nString(this.Strings.App.Title);
     const syncingTitle = ` (${this.getI18nString(this.Strings.Tooltip.Syncing)})`;
@@ -308,7 +319,7 @@ export abstract class WebExtPlatformService implements PlatformService {
       const iconUpdated = this.$q.defer<void>();
       const titleUpdated = this.$q.defer<void>();
 
-      browser.browserAction.getTitle({}).then((currentTitle) => {
+      actionApi.getTitle({}).then((currentTitle: string) => {
         // Don't do anything if browser action title hasn't changed
         if (newTitle === currentTitle) {
           return resolve();
@@ -317,14 +328,14 @@ export abstract class WebExtPlatformService implements PlatformService {
         // Set a delay if finished syncing to prevent flickering when executing many syncs
         if (currentTitle.indexOf(syncingTitle) > 0 && newTitle.indexOf(syncedTitle)) {
           this.refreshInterfaceTimeout = this.$timeout(() => {
-            browser.browserAction.setIcon({ path: iconPath });
-            browser.browserAction.setTitle({ title: newTitle });
+            actionApi.setIcon({ path: iconPath });
+            actionApi.setTitle({ title: newTitle });
           }, 350);
           iconUpdated.resolve();
           titleUpdated.resolve();
         } else {
-          browser.browserAction.setIcon({ path: iconPath }).then(iconUpdated.resolve);
-          browser.browserAction.setTitle({ title: newTitle }).then(titleUpdated.resolve);
+          actionApi.setIcon({ path: iconPath }).then(iconUpdated.resolve);
+          actionApi.setTitle({ title: newTitle }).then(titleUpdated.resolve);
         }
 
         this.$q.all([iconUpdated, titleUpdated]).then(resolve).catch(reject);
