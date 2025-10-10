@@ -1,12 +1,6 @@
 declare namespace chrome {
   namespace offscreen {
-    type Reason =
-      | 'AUDIO_PLAYBACK'
-      | 'BLOBS'
-      | 'DOM_PARSER'
-      | 'DOM_SCRAPING'
-      | 'IFRAME_SCRIPTING'
-      | 'TESTING';
+    type Reason = 'AUDIO_PLAYBACK' | 'BLOBS' | 'DOM_PARSER' | 'DOM_SCRAPING' | 'IFRAME_SCRIPTING' | 'TESTING';
 
     interface CreateDocumentOptions {
       justification: string;

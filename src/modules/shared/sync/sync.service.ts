@@ -236,7 +236,7 @@ export class SyncService {
   }
 
   executeSync(isBackgroundSync = false): ng.IPromise<void> {
-    console.log('executeSync called!!');
+    this.logSvc.logInfo('Executing sync');
     // Check if sync enabled before running sync
     return this.utilitySvc.isSyncEnabled().then((syncEnabled) => {
       if (!syncEnabled) {

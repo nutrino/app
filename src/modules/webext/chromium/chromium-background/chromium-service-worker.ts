@@ -1,3 +1,4 @@
+/* global globalThis */
 import browser, { Alarms, Runtime } from 'webextension-polyfill';
 
 type ServiceWorkerEventMessage =
@@ -34,7 +35,30 @@ const OFFSCREEN_JUSTIFICATION =
 const OFFSCREEN_REASON = 'DOM_SCRAPING';
 const PORT_NAME = 'webext-background';
 
-const getChrome = (): any => (globalThis as any).chrome;
+const getGlobalScope = (): any => {
+  if (typeof globalThis !== 'undefined') {
+    return globalThis;
+  }
+  if (typeof window !== 'undefined') {
+    return window;
+  }
+  return undefined;
+};
+
+const getChrome = (): any => {
+  const scope = getGlobalScope();
+  return scope?.chrome;
+};
+
+const logError = (message: string, error?: unknown): void => {
+  /* eslint-disable-next-line no-console */
+  console.error(message, error);
+};
+
+const logWarning = (message: string): void => {
+  /* eslint-disable-next-line no-console */
+  console.warn(message);
+};
 
 const pendingRequests = new Map<string, PendingRequest>();
 const readyWaiters: ReadyWaiter[] = [];
@@ -83,14 +107,12 @@ const rejectPendingRequests = (reason: Error): void => {
 
 const createOffscreenDocumentIfNeeded = async (): Promise<void> => {
   const chromeApi = getChrome();
-  if (!(chromeApi?.offscreen)) {
+  if (!chromeApi?.offscreen) {
     throw new Error('chrome.offscreen API is not available.');
   }
 
   const hasDocument =
-    typeof chromeApi.offscreen.hasDocument === 'function'
-      ? await toPromise(chromeApi.offscreen.hasDocument())
-      : false;
+    typeof chromeApi.offscreen.hasDocument === 'function' ? await toPromise(chromeApi.offscreen.hasDocument()) : false;
 
   if (!hasDocument) {
     await toPromise(
@@ -105,7 +127,7 @@ const createOffscreenDocumentIfNeeded = async (): Promise<void> => {
 
 const closeOffscreenDocument = async (): Promise<void> => {
   const chromeApi = getChrome();
-  if (!(chromeApi?.offscreen?.closeDocument)) {
+  if (!chromeApi?.offscreen?.closeDocument) {
     return;
   }
   await toPromise(chromeApi.offscreen.closeDocument());
@@ -165,10 +187,12 @@ const handleOffscreenMessage = (message: OffscreenInboundMessage): void => {
       if (message.success) {
         pending.resolve(message.result);
       } else {
-        const errorMessage = (message as {
-          error: SerializedError;
-          success: false;
-        }).error;
+        const errorMessage = (
+          message as {
+            error: SerializedError;
+            success: false;
+          }
+        ).error;
         pending.reject(reviveError(errorMessage));
       }
       break;
@@ -194,62 +218,63 @@ if (chromeApi?.runtime?.onConnect) {
       rejectReadyWaiters(new Error('Offscreen document was disconnected.'));
       rejectPendingRequests(new Error('Offscreen document was disconnected.'));
       closeOffscreenDocument().catch((error: Error) => {
-        console.error('Failed to close offscreen document', error);
+        logError('Failed to close offscreen document', error);
       });
     });
   });
 }
 
 browser.runtime.onMessage.addListener((message) => {
-  return new Promise(async (resolve, reject) => {
-    try {
-      await ensureOffscreenDocument();
-      if (!backgroundPort) {
-        throw new Error('Offscreen document port is unavailable.');
-      }
-      const requestId = generateRequestId();
-      pendingRequests.set(requestId, { reject, resolve });
-      backgroundPort.postMessage({
-        payload: message,
-        requestId,
-        type: 'runtime-message'
-      } as ServiceWorkerEventMessage);
-    } catch (error) {
-      reject(error instanceof Error ? error : new Error(String(error)));
-    }
+  return new Promise((resolve, reject) => {
+    ensureOffscreenDocument()
+      .then(() => {
+        if (!backgroundPort) {
+          throw new Error('Offscreen document port is unavailable.');
+        }
+        const requestId = generateRequestId();
+        pendingRequests.set(requestId, { reject, resolve });
+        backgroundPort.postMessage({
+          payload: message,
+          requestId,
+          type: 'runtime-message'
+        } as ServiceWorkerEventMessage);
+      })
+      .catch((error) => {
+        reject(error instanceof Error ? error : new Error(String(error)));
+      });
   });
 });
 
 browser.runtime.onInstalled.addListener((details) => {
   postToOffscreen({ details, type: 'runtime-installed' }).catch((error) => {
-    console.error('Failed to forward runtime.onInstalled event', error);
+    logError('Failed to forward runtime.onInstalled event', error);
   });
 });
 
 browser.runtime.onStartup.addListener(() => {
   postToOffscreen({ type: 'runtime-startup' }).catch((error) => {
-    console.error('Failed to forward runtime.onStartup event', error);
+    logError('Failed to forward runtime.onStartup event', error);
   });
 });
 
 browser.alarms.onAlarm.addListener((alarm) => {
   postToOffscreen({ alarm, type: 'alarm' }).catch((error) => {
-    console.error('Failed to forward alarms.onAlarm event', error);
+    logError('Failed to forward alarms.onAlarm event', error);
   });
 });
 
 browser.notifications.onClicked.addListener((notificationId: string) => {
   postToOffscreen({ notificationId, type: 'notification-clicked' }).catch((error) => {
-    console.error('Failed to forward notifications.onClicked event', error);
+    logError('Failed to forward notifications.onClicked event', error);
   });
 });
 
 browser.notifications.onClosed.addListener((notificationId: string) => {
   postToOffscreen({ notificationId, type: 'notification-closed' }).catch((error) => {
-    console.error('Failed to forward notifications.onClosed event', error);
+    logError('Failed to forward notifications.onClosed event', error);
   });
 });
 
 if (browser.runtime.getManifest().manifest_version !== 3) {
-  console.warn('Chromium MV3 service worker loaded in a non-MV3 context.');
+  logWarning('Chromium MV3 service worker loaded in a non-MV3 context.');
 }

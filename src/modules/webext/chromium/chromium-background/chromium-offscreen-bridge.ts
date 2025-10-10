@@ -21,6 +21,13 @@ interface SerializedError {
 
 const PORT_NAME = 'webext-background';
 
+const getChrome = (): any => {
+  if (typeof window !== 'undefined' && (window as any).chrome) {
+    return (window as any).chrome;
+  }
+  return undefined;
+};
+
 const isManifestV3 = () => {
   try {
     return browser.runtime.getManifest().manifest_version === 3;
@@ -48,8 +55,8 @@ export const initializeOffscreenBridge = (backgroundSvc: WebExtBackgroundService
     return;
   }
 
-  const chromeApi = (globalThis as any).chrome;
-  if (!(chromeApi?.runtime?.connect)) {
+  const chromeApi = getChrome();
+  if (!chromeApi?.runtime?.connect) {
     return;
   }
 
@@ -68,12 +75,12 @@ export const initializeOffscreenBridge = (backgroundSvc: WebExtBackgroundService
         break;
       case 'runtime-installed':
         backgroundSvc.handleRuntimeInstalled(message.details).catch((error) => {
-          console.error('Failed to process runtime.onInstalled event', error);
+          backgroundSvc.$exceptionHandler(error as Error);
         });
         break;
       case 'runtime-startup':
         backgroundSvc.init().catch((error) => {
-          console.error('Failed to run startup initialisation', error);
+          backgroundSvc.$exceptionHandler(error as Error);
         });
         break;
       case 'runtime-message': {

@@ -1,10 +1,10 @@
 import angular from 'angular';
 import { NgModule } from 'angular-ts-decorators';
-import { initializeOffscreenBridge } from './chromium-offscreen-bridge';
 import { WebExtBackgroundModule } from '../../webext-background/webext-background.module';
 import { WebExtBackgroundService } from '../../webext-background/webext-background.service';
 import { ChromiumBookmarkService } from '../shared/chromium-bookmark/chromium-bookmark.service';
 import { ChromiumPlatformService } from '../shared/chromium-platform/chromium-platform.service';
+import { initializeOffscreenBridge } from './chromium-offscreen-bridge';
 
 @NgModule({
   id: 'ChromiumBackgroundModule',
