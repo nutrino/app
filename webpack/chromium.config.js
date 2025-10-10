@@ -9,6 +9,18 @@ module.exports = (env, argv) => {
     if (manifestPattern) {
       manifestPattern.from = './res/webext/manifest.chromium.json';
     }
+    const appHtmlPattern = copyPlugin.patterns.find((pattern) => pattern.from === './res/webext/app.html');
+    if (appHtmlPattern) {
+      appHtmlPattern.from = './res/webext/app.chromium.html';
+      appHtmlPattern.to = '../app.html';
+    }
+    const backgroundHtmlPattern = copyPlugin.patterns.find(
+      (pattern) => pattern.from === './res/webext/background.html'
+    );
+    if (backgroundHtmlPattern) {
+      backgroundHtmlPattern.from = './res/webext/background.chromium.html';
+      backgroundHtmlPattern.to = '../background.html';
+    }
   }
   const optimization = webExtConfig.optimization ?? {};
   const splitChunks = optimization.splitChunks ?? {};
