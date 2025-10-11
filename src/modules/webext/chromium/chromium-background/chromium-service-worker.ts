@@ -1,5 +1,5 @@
 /* global globalThis */
-import browser, { Alarms, Runtime } from 'webextension-polyfill';
+import type { Alarms, Runtime } from 'webextension-polyfill';
 
 type ServiceWorkerEventMessage =
   | { type: 'alarm'; alarm: Alarms.Alarm }
@@ -35,6 +35,9 @@ const OFFSCREEN_JUSTIFICATION =
 const OFFSCREEN_REASON = 'DOM_SCRAPING';
 const PORT_NAME = 'webext-background';
 
+type BrowserApi = typeof import('webextension-polyfill');
+declare const importScripts: (...urls: string[]) => void;
+
 const getGlobalScope = (): any => {
   if (typeof globalThis !== 'undefined') {
     return globalThis;
@@ -49,6 +52,32 @@ const getChrome = (): any => {
   const scope = getGlobalScope();
   return scope?.chrome;
 };
+
+const ensureBrowserApi = (): BrowserApi => {
+  const scope = getGlobalScope();
+
+  if (typeof importScripts === 'function') {
+    try {
+      importScripts('browser-polyfill.js');
+      scope.__xbPolyfillLoaded = true;
+    } catch (error) {
+      scope.__xbPolyfillError = String(error);
+      /* eslint-disable-next-line no-console */
+      console.warn('Failed to import webextension polyfill', error);
+    }
+  }
+
+  const browserCandidate = scope?.browser;
+  if (!browserCandidate) {
+    scope.__xbBrowserError = 'webextension polyfill is unavailable in service worker context.';
+    throw new Error('webextension polyfill is unavailable in service worker context.');
+  }
+
+  scope.__xbBrowserReady = true;
+  return browserCandidate as BrowserApi;
+};
+
+const browser = ensureBrowserApi();
 
 const logError = (message: string, error?: unknown): void => {
   /* eslint-disable-next-line no-console */
@@ -203,6 +232,7 @@ const handleOffscreenMessage = (message: OffscreenInboundMessage): void => {
 
 const chromeApi = getChrome();
 if (chromeApi?.runtime?.onConnect) {
+  (getGlobalScope() as any).__xbOnConnectAttempted = true;
   chromeApi.runtime.onConnect.addListener((port: any) => {
     if (port.name !== PORT_NAME) {
       return;
@@ -224,6 +254,7 @@ if (chromeApi?.runtime?.onConnect) {
   });
 }
 
+getGlobalScope().__xbOnMessageAttempted = true;
 browser.runtime.onMessage.addListener((message) => {
   return new Promise((resolve, reject) => {
     ensureOffscreenDocument()

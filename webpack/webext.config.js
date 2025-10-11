@@ -68,6 +68,14 @@ module.exports = (env, argv) => {
             from: './res/webext/images'
           },
           {
+            from: './node_modules/webextension-polyfill/dist/browser-polyfill.js',
+            to: '../assets/browser-polyfill.js'
+          },
+          {
+            from: './node_modules/webextension-polyfill/dist/browser-polyfill.js.map',
+            to: '../assets/browser-polyfill.js.map'
+          },
+          {
             from: './res/webext/manifest.json',
             to: '../manifest.json',
             transform: (buffer) => {
