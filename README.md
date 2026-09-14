@@ -3,10 +3,10 @@
 `mv3-codex` 브랜치의 Firefox·Chrome용 MV3 구현입니다. 기존 서버의
 PBKDF2 / AES-GCM / LZUTF8 형식을 유지하며, AngularJS 없이 동작합니다.
 
-**검증 상태:** macOS의 Firefox Developer Edition 156과 Chrome 152에서 실제
-팝업, 서버 연결, 브라우저 간 양방향 동기화와 백그라운드 재시작을 확인했습니다.
-자동 테스트는 76,010개 복원과 장애 복구를 포함합니다. 실제 브라우저의 대량 복원과
-백업 파일 복구는 테스트 북마크 교체 승인 대기 중이며, Windows 실행은 미검증입니다.
+**검증 상태:** macOS의 Firefox Developer Edition 156과 Chrome 152에서 팝업,
+브라우저 간 양방향 동기화, 백업 다운로드·복구, 76,010개 실제 복원과 복원 도중
+백그라운드 종료 후 재개를 확인했습니다. Windows·macOS·Linux CI도 통과했습니다.
+Windows 브라우저의 직접 실행은 미검증이며, Firefox ZIP은 서명 전 빌드입니다.
 자세한 범위는 [검증 기록](docs/mv3-validation.md)을 확인하세요.
 
 ## 빌드
