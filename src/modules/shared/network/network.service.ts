@@ -44,12 +44,11 @@ export class NetworkService {
   }
 
   isNetworkConnected(): boolean {
-    return (window as any).Connection &&
-      (window.navigator as any).connection &&
-      (window.navigator as any).connection.type
-      ? (window.navigator as any).connection.type !== (window as any).Connection.NONE &&
-          (window.navigator as any).connection.type !== (window as any).Connection.UNKNOWN
-      : window.navigator.onLine;
+    const connectionTypes = typeof window !== 'undefined' && (window as any).Connection;
+    const connection = (navigator as any).connection;
+    return connectionTypes && connection?.type
+      ? connection.type !== connectionTypes.NONE && connection.type !== connectionTypes.UNKNOWN
+      : navigator.onLine;
   }
 
   isNetworkConnectionError(err: Error): boolean {
