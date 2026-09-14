@@ -1,0 +1,144 @@
+:root {
+  color-scheme: light dark;
+  font:
+    14px/1.55 system-ui,
+    sans-serif;
+  background: #f4f6fa;
+  color: #202d40;
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  min-width: 390px;
+  max-width: 760px;
+}
+header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 20px;
+  background: #193555;
+  color: white;
+}
+h1 {
+  font-size: 20px;
+  margin: 0;
+}
+header small {
+  opacity: 0.8;
+}
+header button {
+  margin-left: auto;
+  width: 36px;
+}
+main {
+  padding: 20px;
+}
+section {
+  margin: 16px 0;
+}
+label {
+  display: block;
+  margin: 12px 0;
+  font-weight: 600;
+}
+input {
+  display: block;
+  width: 100%;
+  padding: 10px;
+  margin-top: 5px;
+  border: 1px solid #8797ab;
+  border-radius: 5px;
+  font: inherit;
+  background: white;
+  color: #182737;
+}
+button {
+  padding: 9px 12px;
+  margin: 4px 4px 4px 0;
+  border: 0;
+  border-radius: 5px;
+  background: #17629f;
+  color: white;
+  font: inherit;
+  cursor: pointer;
+}
+button:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+.secondary {
+  background: #657080;
+}
+.hint,
+footer {
+  font-size: 12px;
+  color: #536478;
+}
+#notice {
+  padding: 12px;
+  background: #e2edf8;
+  border-radius: 6px;
+  overflow-wrap: anywhere;
+}
+#notice.error {
+  background: #ffe3dd;
+  color: #9a2614;
+}
+#server {
+  overflow-wrap: anywhere;
+}
+progress {
+  width: 100%;
+}
+details {
+  border-top: 1px solid #becadb;
+  padding: 14px 0;
+}
+summary {
+  cursor: pointer;
+  font-weight: 650;
+}
+footer {
+  padding-top: 12px;
+}
+li {
+  margin: 8px 0;
+  overflow-wrap: anywhere;
+}
+a {
+  color: #17629f;
+}
+[hidden] {
+  display: none !important;
+}
+@media (min-width: 800px) {
+  body {
+    margin: 32px auto;
+    border: 1px solid #becadb;
+    border-radius: 10px;
+    overflow: hidden;
+  }
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    background: #192332;
+    color: #e6edf6;
+  }
+  .hint,
+  footer {
+    color: #b7c4d6;
+  }
+  input {
+    background: #273449;
+    color: white;
+  }
+  #notice {
+    background: #263f5c;
+  }
+  a {
+    color: #90caff;
+  }
+}
