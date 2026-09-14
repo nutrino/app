@@ -11,6 +11,7 @@ module.exports = (env, argv) => {
   manifestPattern.transform = (buffer) => {
     const webExtTransfromResult = webExtTransfrom(buffer);
     const manifest = JSON.parse(webExtTransfromResult);
+    delete manifest.version_name;
     manifest.browser_specific_settings = {
       gecko: {
         id: '{019b606a-6f61-4d01-af2a-cea528f606da}',

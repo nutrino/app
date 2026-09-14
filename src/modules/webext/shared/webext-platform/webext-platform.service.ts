@@ -134,7 +134,8 @@ export abstract class WebExtPlatformService implements PlatformService {
   }
 
   getAppVersionName(): ng.IPromise<string> {
-    return this.$q.resolve((browser.runtime.getManifest() as any).version_name);
+    const manifest = browser.runtime.getManifest();
+    return this.$q.resolve((manifest as any).version_name ?? manifest.version);
   }
 
   getCurrentLocale(): ng.IPromise<string> {
@@ -348,7 +349,11 @@ export abstract class WebExtPlatformService implements PlatformService {
 
     return promise.catch((err: Error) => {
       // Recreate the error object as webextension-polyfill wraps the object before returning it
-      const error: BaseError = new (<any>Errors)[err.message]();
+      const ErrorType = (<any>Errors)[err.message];
+      if (typeof ErrorType !== 'function') {
+        throw err;
+      }
+      const error: BaseError = new ErrorType();
       error.logged = true;
       throw error;
     });

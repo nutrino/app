@@ -58,11 +58,19 @@ module.exports = (env, argv) => {
           },
           {
             from: './res/webext/app.html',
-            to: '..'
+            to: '..',
+            transform: (buffer) =>
+              argv.mode === 'development'
+                ? buffer.toString().replace('<script src="assets/vendor.js"></script>', '')
+                : buffer
           },
           {
             from: './res/webext/background.html',
-            to: '..'
+            to: '..',
+            transform: (buffer) =>
+              argv.mode === 'development'
+                ? buffer.toString().replace('<script src="assets/vendor.js"></script>', '')
+                : buffer
           },
           {
             from: './res/webext/images'
