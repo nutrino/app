@@ -178,7 +178,7 @@ export async function hash(value) {
   );
 }
 export class Api {
-  constructor(config, fetcher = fetch) {
+  constructor(config, fetcher = globalThis.fetch.bind(globalThis)) {
     this.config = config;
     this.fetcher = fetcher;
   }

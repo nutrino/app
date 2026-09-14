@@ -455,3 +455,20 @@ test("failed native restore can roll back to the original backup", async () => {
     ),
   );
 });
+test("default fetch preserves the browser global receiver", async () => {
+  const original = globalThis.fetch;
+  globalThis.fetch = async function () {
+    assert.equal(this, globalThis);
+    return new Response(JSON.stringify({ version: "1.6.0" }));
+  };
+  try {
+    assert.deepEqual(
+      await new Api({ url: "https://example.com", id: "test" }).request(
+        "/version",
+      ),
+      { version: "1.6.0" },
+    );
+  } finally {
+    globalThis.fetch = original;
+  }
+});
