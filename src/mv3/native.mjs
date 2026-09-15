@@ -214,6 +214,43 @@ export class Native {
     }
     return spec;
   }
+  orderPlan(plan, created, parents) {
+    const ids = { ...plan.rootMap, ...created };
+    const groups = new Map();
+    for (const step of plan.steps) {
+      if (!parents.has(step.parent)) continue;
+      if (!ids[step.parent] || !ids[step.node.id])
+        throw Error("순서 복구에 필요한 생성 기록이 없습니다.");
+      if (!groups.has(step.parent)) groups.set(step.parent, []);
+      groups
+        .get(step.parent)
+        .push({ id: ids[step.node.id], index: step.index });
+    }
+    return [...groups].map(([parent, children]) => ({
+      parentId: ids[parent],
+      ids: children.sort((a, b) => a.index - b.index).map((child) => child.id),
+    }));
+  }
+  async reorderGroup(group, checkpoint, expired) {
+    const children = await this.bookmarks.getChildren(group.parentId);
+    const ids = children.map((node) => node.id);
+    const members = new Set(ids);
+    if (
+      ids.length !== group.ids.length ||
+      group.ids.some((id) => !members.has(id))
+    )
+      throw Error("순서 복구 도중 폴더 내용이 변경되어 중단했습니다.");
+    for (let index = 0; index < group.ids.length; index++) {
+      if (ids[index] === group.ids[index]) continue;
+      const from = ids.indexOf(group.ids[index], index);
+      // Await every move. Never remove/recreate bookmarks or change their parent.
+      await checkpoint();
+      await this.bookmarks.move(group.ids[index], { index });
+      ids.splice(index, 0, ids.splice(from, 1)[0]);
+      if (expired()) return false;
+    }
+    return true;
+  }
   matches(native, spec) {
     if (!native) return false;
     if (spec.type === "separator") return native.type === "separator";

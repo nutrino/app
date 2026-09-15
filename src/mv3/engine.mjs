@@ -1,4 +1,7 @@
-import { restoreDifferences } from "./restore-differences.mjs";
+import {
+  compareRestoreTrees,
+  restoreDifferences,
+} from "./restore-differences.mjs";
 import {
   Api,
   countTree,
@@ -36,7 +39,9 @@ export class Engine {
       phase: s.apply
         ? s.apply.phase === "clear"
           ? "기존 북마크 정리 중"
-          : "복원 중"
+          : s.apply.phase === "order"
+            ? "복원 순서 조정 중"
+            : "복원 중"
         : s.conflict
           ? "충돌 확인 필요"
           : s.preview
@@ -52,7 +57,9 @@ export class Engine {
               done: (s.apply.clearedBefore || 0) + s.apply.clearCursor,
               total: s.apply.clearTotal || 1,
             }
-          : { done: s.apply.cursor, total: s.apply.total }
+          : s.apply.phase === "order"
+            ? { done: s.apply.orderCursor || 0, total: s.apply.orderTotal || 1 }
+            : { done: s.apply.cursor, total: s.apply.total }
         : undefined,
       count: s.count,
       conflict: !!s.conflict,
@@ -149,6 +156,7 @@ export class Engine {
     await this.save(s, {
       target: tree,
       plan,
+      orderPlan: undefined,
       created: {},
       pendingUpload: undefined,
     });
@@ -248,12 +256,56 @@ export class Engine {
       ]),
     );
     const local = await this.native.snapshot(tree, mapping);
-    if ((await hash(local.tree)) !== (await hash(tree)))
+    if ((await hash(local.tree)) !== (await hash(tree))) {
+      const diff = compareRestoreTrees(tree, local.tree);
+      if (Object.keys(diff.counts).length === 1 && diff.counts["순서"]) {
+        // Resume older failed restores from their existing target/mapping. Only order
+        // may differ; missing nodes, edits and parent changes must still stop here.
+        let orderPlan = await this.store.get("orderPlan");
+        if (!s.apply.ordering) {
+          if ((s.apply.orderPasses || 0) >= 2)
+            throw Error(
+              "순서를 조정한 뒤에도 다시 변경됐습니다. " +
+                restoreDifferences(tree, local.tree) +
+                " 자동 동기화를 중단했습니다.",
+            );
+          orderPlan = this.native.orderPlan(plan, created, diff.orderParents);
+          if (!orderPlan.length)
+            throw Error("복구할 북마크 순서 기록을 찾을 수 없습니다.");
+          s.apply.orderPasses = (s.apply.orderPasses || 0) + 1;
+          s.apply.ordering = true;
+          s.apply.phase = "order";
+          s.apply.orderCursor = 0;
+          s.apply.orderTotal = orderPlan.length;
+          await this.save(s, { orderPlan });
+        }
+        while (s.apply.orderCursor < orderPlan.length) {
+          const complete = await this.native.reorderGroup(
+            orderPlan[s.apply.orderCursor],
+            async () => {
+              s.apply.orderMoves = (s.apply.orderMoves || 0) + 1;
+              if (s.apply.orderMoves > plan.steps.length * 2)
+                throw Error("순서 변경이 반복되어 복구를 중단했습니다.");
+              await this.save(s);
+            },
+            () => Date.now() - start >= budget,
+          );
+          if (!complete) return;
+          s.apply.orderCursor++;
+          await this.save(s);
+          if (Date.now() - start >= budget) return;
+        }
+        s.apply.ordering = false;
+        await this.save(s, { orderPlan: undefined });
+        // Fresh full snapshot/hash on the next tick, including after a restart.
+        return;
+      }
       throw Error(
         "복원 결과가 대상 데이터와 다릅니다. " +
           restoreDifferences(tree, local.tree) +
           " 자동 동기화를 중단했습니다.",
       );
+    }
     const epoch = s.apply.epoch;
     s.baseHash = s.apply.pauseAfter ? s.baseHash : await hash(local.tree);
     s.lastUpdated = s.apply.lastUpdated;
@@ -268,6 +320,7 @@ export class Engine {
       created: undefined,
       plan: undefined,
       target: undefined,
+      orderPlan: undefined,
       preview: undefined,
     });
     await this.store.deletePrefix?.(`created:${epoch}:`);
@@ -447,6 +500,13 @@ export class Engine {
   pause(enabled) {
     return this.exclusive(async () => {
       const s = await this.state();
+      if (enabled && !s.enabled) {
+        s.error = undefined;
+        if (s.apply) {
+          s.apply.orderPasses = 0;
+          s.apply.orderMoves = 0;
+        }
+      }
       s.enabled = enabled;
       await this.save(s);
       return this.status();
