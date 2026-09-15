@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>xBrowserSync MV3</title>
+    <link rel="stylesheet" href="app.css" />
+  </head>
+  <body>
+    <header>
+      <img src="icon128.png" width="36" height="36" alt="" />
+      <div>
+        <h1>xBrowserSync MV3</h1>
+        <small>Firefox · Chrome 북마크 동기화</small>
+      </div>
+      <button id="full" title="전체 화면으로 열기">↗</button>
+    </header>
+    <main>
+      <p id="notice" role="status" aria-live="polite">실행부에 연결 중…</p>
+      <section id="login">
+        <form id="connect">
+          <label
+            >서버 주소<input
+              id="url"
+              type="url"
+              required
+              placeholder="https://your-sync-server"
+              autocomplete="url" /></label
+          ><label
+            >동기화 ID<input
+              id="sync-id"
+              required
+              autocomplete="off"
+              spellcheck="false" /></label
+          ><label
+            >비밀번호<input
+              id="password"
+              type="password"
+              required
+              autocomplete="off"
+          /></label>
+          <p class="hint">
+            비밀번호는 이 기기에서 암호화 키를 만들 때만 사용합니다. 암호화된
+            북마크와 동기화 ID를 지정한 서버로 전송합니다.
+          </p>
+          <button type="submit">연결 및 서버 데이터 확인</button>
+        </form>
+      </section>
+      <section id="account" hidden>
+        <p id="server"></p>
+        <p id="summary"></p>
+        <progress id="progress" hidden></progress>
+        <div id="preview" hidden>
+          <p>
+            서버 북마크를 적용하면 이 브라우저의 북마크를 교체합니다. 교체 전
+            사본은 확장 내부에 자동 백업됩니다.
+          </p>
+          <button id="restore">로컬 백업 후 서버에서 복원</button>
+        </div>
+        <div id="conflict" hidden>
+          <p>
+            두 사본을 먼저 내려받아 확인하세요. 선택하지 않은 쪽도 백업으로
+            보관합니다.
+          </p>
+          <button data-export="conflictLocal">충돌: 로컬 사본 다운로드</button
+          ><button data-export="conflictRemote">충돌: 서버 사본 다운로드</button
+          ><button id="choose-server">서버 내용으로 로컬 교체</button
+          ><button id="choose-local">로컬 내용으로 서버 교체</button>
+        </div>
+        <button id="diagnose" hidden>복원 차이 확인</button>
+        <button id="rollback" hidden>
+          복원 중단 후 교체 전 백업으로 되돌리기
+        </button>
+        <div class="actions">
+          <button id="sync">지금 동기화</button
+          ><button id="pause">일시 정지</button
+          ><button id="disconnect" class="secondary">연결 해제</button>
+        </div>
+      </section>
+      <details>
+        <summary>백업 및 복구</summary>
+        <p class="hint">
+          백업 JSON은 암호화되지 않은 북마크입니다. 비밀번호·암호화 키는
+          포함하지 않습니다. 복구 후 자동 동기화는 일시 정지됩니다.
+        </p>
+        <button data-export="current">현재 북마크 다운로드</button
+        ><button data-export="backup">교체 전 자동 백업 다운로드</button
+        ><button data-export="previousBackup">이전 자동 백업 다운로드</button
+        ><label
+          >백업 JSON 복원<input
+            id="import"
+            type="file"
+            accept="application/json,.json"
+        /></label>
+      </details>
+      <details>
+        <summary>북마크 검색</summary>
+        <label
+          >제목·주소<input id="search" type="search" placeholder="검색어"
+        /></label>
+        <ul id="results"></ul>
+      </details>
+      <footer>
+        자동 동기화: 약 1분 간격 · 북마크 변경 시 자동 실행<br />복원이 끝날
+        때까지 브라우저의 북마크를 편집하지 마세요.
+      </footer>
+    </main>
+    <script src="app.js"></script>
+  </body>
+</html>

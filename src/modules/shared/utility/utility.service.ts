@@ -195,7 +195,8 @@ export class UtilityService {
   }
 
   getUniqueishId(): string {
-    return window.crypto.getRandomValues(new Uint32Array(1))[0].toString(36);
+    // crypto is available globally in both window and service worker contexts
+    return crypto.getRandomValues(new Uint32Array(1))[0].toString(36);
   }
 
   @boundMethod
@@ -211,7 +212,7 @@ export class UtilityService {
   }
 
   isBraveBrowser(): boolean {
-    return !angular.isUndefined(window.navigator.brave);
+    return typeof navigator !== 'undefined' && !angular.isUndefined((navigator as any).brave);
   }
 
   @boundMethod
@@ -229,8 +230,8 @@ export class UtilityService {
 
   parseUrl(url: string): Url {
     const searchObject: any = {};
-    const parser = document.createElement('a');
-    parser.href = url;
+    // eslint-disable-next-line no-undef
+    const parser = new URL(url, globalThis.location?.href);
     const queries = parser.search.replace(/^\?/, '').split('&');
 
     let split;
