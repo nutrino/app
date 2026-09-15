@@ -1,11 +1,53 @@
 const fs = require("node:fs/promises");
 const path = require("node:path");
 const webpack = require("webpack");
+const { execFileSync } = require("node:child_process");
+const { createHash } = require("node:crypto");
+async function buildInfo(platform) {
+  let commit = "unknown",
+    committedAt = null,
+    dirty = null;
+  try {
+    [commit, committedAt] = execFileSync(
+      "git",
+      ["log", "-1", "--format=%H%n%cI"],
+      { encoding: "utf8" },
+    )
+      .trim()
+      .split("\n");
+    dirty = !!execFileSync(
+      "git",
+      ["status", "--porcelain", "--untracked-files=normal"],
+      { encoding: "utf8" },
+    ).trim();
+  } catch {
+    /* Source archives can be built without Git metadata. */
+  }
+  const hash = createHash("sha256");
+  for (const file of [
+    ...(await fs.readdir("src/mv3")).sort().map((name) => `src/mv3/${name}`),
+    "scripts/build-mv3.js",
+    "package.json",
+    "package-lock.json",
+  ]) {
+    hash.update(file);
+    hash.update(await fs.readFile(file));
+  }
+  return {
+    commit,
+    committedAt,
+    dirty,
+    sourceHash: hash.digest("hex"),
+    builtAt: new Date().toISOString(),
+    platform,
+  };
+}
 async function main() {
   const platform = process.argv[2];
   if (!["firefox", "chromium"].includes(platform))
     throw Error("Expected firefox or chromium");
   const development = process.argv.includes("--dev");
+  const info = await buildInfo(platform);
   const out = path.resolve(
     process.env.XBS_OUTPUT_ROOT || "build/mv3",
     platform,
@@ -23,6 +65,11 @@ async function main() {
         output: { path: out, filename: "[name].js" },
         devtool: development ? "source-map" : false,
         performance: false,
+        plugins: [
+          new webpack.DefinePlugin({
+            __XBS_BUILD_INFO__: JSON.stringify(info),
+          }),
+        ],
         optimization: { splitChunks: false },
         resolve: {
           alias: { "readable-stream": false },
@@ -66,6 +113,10 @@ async function main() {
   await fs.writeFile(
     path.join(out, "manifest.json"),
     JSON.stringify(manifest, null, 2) + "\n",
+  );
+  await fs.writeFile(
+    path.join(out, "build-info.json"),
+    JSON.stringify(info, null, 2) + "\n",
   );
   for (const file of ["app.html", "app.css"])
     await fs.copyFile(path.resolve("src/mv3", file), path.join(out, file));

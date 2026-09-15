@@ -91,6 +91,13 @@ export class Bookmarks {
       1,
     );
   }
+  async move(id, { index }) {
+    const node = this.find(id);
+    const parent = this.find(node.parentId);
+    const from = parent.children.findIndex((child) => child.id === id);
+    parent.children.splice(index, 0, parent.children.splice(from, 1)[0]);
+    return structuredClone(node);
+  }
 }
 const tree = validateTree([
   {
@@ -672,4 +679,138 @@ test("interrupted deletion batch waits for siblings and replays missing IDs safe
   assert.equal((await c.engine.status()).error, undefined);
   assert.equal((await c.engine.status()).applying, false);
   assert.equal((await c.store.get("backup")).bookmarks[0].children.length, 16);
+});
+
+async function interruptedOrderRestore(firefox = true) {
+  const c = await setup(firefox);
+  const target = structuredClone(tree);
+  target[0].children = Array.from({ length: 88 }, (_, i) => ({
+    id: 1000 + i * 2,
+    title: `Folder ${i}`,
+    children: [
+      {
+        id: 1001 + i * 2,
+        title: `Entry ${i}`,
+        url: `https://example.org/${i}`,
+      },
+    ],
+  }));
+  c.server.bookmarks = await encrypt(target, key);
+  await c.engine.startRestore();
+  const snapshot = c.native.snapshot.bind(c.native);
+  c.native.snapshot = async () => {
+    throw Error("simulated old final verification failure");
+  };
+  await c.engine.tick();
+  c.native.snapshot = snapshot;
+  assert.equal((await c.engine.status()).enabled, false);
+  c.bookmarks.tree.children[0].children.reverse();
+  return { ...c, target };
+}
+async function finishOrderRestore(c) {
+  await c.engine.pause(true);
+  for (let i = 0; i < 8 && (await c.engine.status()).applying; i++) {
+    await c.engine.tick();
+    if ((await c.engine.status()).error) break;
+  }
+}
+for (const firefox of [true, false])
+  test(`${firefox ? "Firefox" : "Chrome"} resumes 88 order differences without recreating or uploading`, async () => {
+    const c = await interruptedOrderRestore(firefox);
+    assert.match(await c.engine.diagnoseRestore(), /순서 88개/);
+    const backup = await c.store.get("backup");
+    const next = c.bookmarks.next;
+    await finishOrderRestore(c);
+    assert.equal((await c.engine.status()).error, undefined);
+    assert.equal((await c.engine.status()).applying, false);
+    assert.equal(await hash(await c.store.get("base")), await hash(c.target));
+    assert.equal(c.bookmarks.next, next);
+    assert.equal(c.writes(), 0);
+    assert.deepEqual(await c.store.get("backup"), backup);
+  });
+
+test("order repair resumes after native move succeeds but its response is lost", async () => {
+  const c = await interruptedOrderRestore();
+  const move = c.bookmarks.move.bind(c.bookmarks);
+  let crash = true;
+  c.bookmarks.move = async (...args) => {
+    const result = await move(...args);
+    if (crash) {
+      crash = false;
+      throw Error("lost move response");
+    }
+    return result;
+  };
+  await finishOrderRestore(c);
+  assert.match((await c.engine.status()).error, /lost move response/);
+  c.engine = new Engine(c.store, c.native, () => c.api);
+  await finishOrderRestore(c);
+  assert.equal((await c.engine.status()).error, undefined);
+  assert.equal((await c.engine.status()).applying, false);
+  assert.equal(c.writes(), 0);
+});
+
+test("order differences mixed with edited content are never repaired automatically", async () => {
+  const c = await interruptedOrderRestore();
+  c.bookmarks.tree.children[0].children[0].title = "user edit";
+  c.bookmarks.move = async () => assert.fail("must preserve edits");
+  await finishOrderRestore(c);
+  assert.match((await c.engine.status()).error, /title/);
+  assert.equal((await c.engine.status()).enabled, false);
+  assert.equal(c.writes(), 0);
+});
+
+test("order repair refuses membership changes after comparison", async () => {
+  const c = await interruptedOrderRestore();
+  const getChildren = c.bookmarks.getChildren.bind(c.bookmarks);
+  c.bookmarks.getChildren = async (id) => [
+    ...(await getChildren(id)),
+    { id: "foreign", title: "external" },
+  ];
+  c.bookmarks.move = async () =>
+    assert.fail("must not move unexpected folder members");
+  await finishOrderRestore(c);
+  assert.match((await c.engine.status()).error, /폴더 내용이 변경/);
+  assert.equal(c.writes(), 0);
+});
+
+test("continual order interference stops after two passes without relaxing final hash", async () => {
+  const c = await interruptedOrderRestore();
+  const snapshot = c.native.snapshot.bind(c.native);
+  c.native.snapshot = async (...args) => {
+    c.bookmarks.tree.children[0].children.reverse();
+    return snapshot(...args);
+  };
+  // Initial reverse above would undo the fixture reversal; start from correct order.
+  c.bookmarks.tree.children[0].children.reverse();
+  await finishOrderRestore(c);
+  assert.match((await c.engine.status()).error, /다시 변경/);
+  assert.equal((await c.engine.status()).enabled, false);
+  assert.equal((await c.store.get("state")).apply.orderPasses, 2);
+  assert.equal(c.writes(), 0);
+});
+
+test("order repair yields within a folder and resumes from durable records", async () => {
+  const c = await interruptedOrderRestore();
+  const apply = c.engine.continueApply.bind(c.engine);
+  c.engine.continueApply = (state) => apply(state, 0);
+  await c.engine.pause(true);
+  await c.engine.tick();
+  const status = await c.engine.status();
+  assert.equal(status.error, undefined);
+  assert.equal(status.phase, "복원 순서 조정 중");
+  assert.equal((await c.store.get("state")).apply.orderMoves, 1);
+  c.engine = new Engine(c.store, c.native, () => c.api);
+  await finishOrderRestore(c);
+  assert.equal((await c.engine.status()).applying, false);
+  assert.equal(await hash(await c.store.get("base")), await hash(c.target));
+});
+
+test("Chrome Other order repair includes its synthetic Menu wrapper", async () => {
+  const c = await interruptedOrderRestore(false);
+  c.bookmarks.tree.children[1].children.reverse();
+  await finishOrderRestore(c);
+  assert.equal((await c.engine.status()).error, undefined);
+  assert.equal((await c.engine.status()).applying, false);
+  assert.equal(await hash(await c.store.get("base")), await hash(c.target));
 });

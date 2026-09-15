@@ -1,11 +1,13 @@
 import browser from "webextension-polyfill";
 import { MAX_BYTES } from "./protocol.mjs";
 import { ConnectionForm, needsSetupTab } from "./connection-form.mjs";
+import { BUILD_INFO, describeBuild, sameBuild } from "./build-info.mjs";
 const $ = (id) => document.getElementById(id);
 let state;
 let busy = false;
 let errorUntil = 0;
 let ready = false;
+$("ui-build").textContent = "화면 · " + describeBuild(BUILD_INFO);
 async function rpc(type, data = {}) {
   const result = await browser.runtime.sendMessage({ type, ...data });
   if (!result?.ok)
@@ -21,6 +23,17 @@ function notice(text, error = false) {
 }
 async function refresh() {
   state = await rpc("status");
+  $("runtime-build").textContent = "실행부 · " + describeBuild(state.build);
+  $("build-match").textContent = sameBuild(BUILD_INFO, state.build)
+    ? "화면과 실행부가 같은 빌드입니다."
+    : "화면과 실행부의 빌드가 다르거나 확인되지 않습니다. 확장을 다시 로드하고 화면을 다시 여세요.";
+  $("build-match").classList.toggle(
+    "error",
+    !sameBuild(BUILD_INFO, state.build),
+  );
+  $("restore-state").textContent = state.restoreState
+    ? `복원 단계: ${state.restoreState.phase} · ${state.enabled ? "실행 중" : "정지"} · 생성 ${state.restoreState.cursor}/${state.restoreState.total} · 순서 조정 ${state.restoreState.passes}회 / 이동 ${state.restoreState.moves}회`
+    : "진행 중인 복원 없음";
   $("login").hidden = state.connected;
   $("account").hidden = !state.connected;
   $("server").textContent = state.url || "";

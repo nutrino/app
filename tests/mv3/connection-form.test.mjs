@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { describeBuild, sameBuild } from "../../src/mv3/build-info.mjs";
 import {
   ConnectionForm,
   needsSetupTab,
@@ -53,6 +54,28 @@ function fixture(persisted = {}, transient = {}) {
     requests: () => requests,
   };
 }
+
+test("build labels distinguish stale runtime, uncommitted code and missing Git metadata", () => {
+  const info = {
+    commit: "1234567890abcdef",
+    sourceHash: "a".repeat(64),
+    committedAt: "2026-09-15T00:00:00Z",
+    builtAt: "2026-09-15T01:00:00Z",
+    platform: "firefox",
+    dirty: true,
+  };
+  assert.match(describeBuild(info), /KST/);
+  assert.match(describeBuild(info), /커밋되지 않은 변경/);
+  assert.match(describeBuild(null), /빌드 정보 없음/);
+  assert.equal(sameBuild(info, { ...info }), true);
+  assert.equal(sameBuild(info, { ...info, sourceHash: "b".repeat(64) }), false);
+  assert.equal(sameBuild(info, { ...info, builtAt: "older" }), false);
+  assert.equal(sameBuild(info, null), false);
+  assert.match(
+    describeBuild({ ...info, committedAt: null, dirty: null }),
+    /확인 불가/,
+  );
+});
 
 test("first setup requests only the selected server before credentials and connects once", async () => {
   const f = fixture();
