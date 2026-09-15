@@ -41,7 +41,7 @@ async function main() {
     version: "1.8.1",
     description: "Encrypted bookmark sync for Firefox and Chromium.",
     icons: { 128: "icon128.png" },
-    action: { default_popup: "app.html", default_icon: "icon128.png" },
+    action: { default_popup: "app.html?popup=1", default_icon: "icon128.png" },
     options_ui: { page: "app.html", open_in_tab: true },
     permissions: ["bookmarks", "storage", "alarms", "unlimitedStorage"],
     optional_host_permissions: ["http://*/*", "https://*/*"],

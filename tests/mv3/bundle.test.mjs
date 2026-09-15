@@ -28,6 +28,8 @@ for (const platform of ["firefox", "chromium"])
     function boot() {
       let message;
       let alarm;
+      let installed;
+      const tabs = [];
       const timers = [];
       const listeners = [];
       const event = () => ({
@@ -45,7 +47,17 @@ for (const platform of ["firefox", "chromium"])
             },
           },
           onStartup: event(),
-          onInstalled: event(),
+          onInstalled: {
+            addListener(fn) {
+              installed = fn;
+              listeners.push(fn);
+            },
+          },
+        },
+        tabs: {
+          async create(tab) {
+            tabs.push(tab);
+          },
         },
         bookmarks: {
           getTree: async () => {
@@ -106,12 +118,19 @@ for (const platform of ["firefox", "chromium"])
       rpc.alarm = () => alarm({ name: "xbs-mv3-sync" });
       rpc.timers = timers;
       rpc.api = api;
+      rpc.installed = installed;
+      rpc.tabs = tabs;
       return rpc;
     }
     const first = await boot()("status");
     assert.equal(first.ok, true);
     assert.equal(first.data.connected, false);
     const rpc = boot();
+    rpc.installed({ reason: "update" });
+    assert.equal(rpc.tabs.length, 0);
+    rpc.installed({ reason: "install" });
+    assert.equal(rpc.tabs.length, 1);
+    assert.equal(rpc.tabs[0].url, "test-extension://test/app.html");
     const restarted = await rpc("status");
     assert.equal(restarted.ok, true);
     assert.equal(restarted.data.enabled, false);

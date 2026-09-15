@@ -1,9 +1,11 @@
 import browser from "webextension-polyfill";
-import { hostPermission, MAX_BYTES } from "./protocol.mjs";
+import { MAX_BYTES } from "./protocol.mjs";
+import { ConnectionForm, needsSetupTab } from "./connection-form.mjs";
 const $ = (id) => document.getElementById(id);
 let state;
 let busy = false;
 let errorUntil = 0;
+let ready = false;
 async function rpc(type, data = {}) {
   const result = await browser.runtime.sendMessage({ type, ...data });
   if (!result?.ok)
@@ -39,7 +41,9 @@ async function refresh() {
   if (Date.now() > errorUntil)
     notice(
       state.error ||
-        `${state.phase}${state.progress ? ` (${state.progress.done}/${state.progress.total})` : ""}`,
+        (state.connected
+          ? `${state.phase}${state.progress ? ` (${state.progress.done}/${state.progress.total})` : ""}`
+          : "서버 연결 설정"),
       !!state.error,
     );
 }
@@ -62,25 +66,20 @@ async function action(fn) {
 }
 $("connect").addEventListener("submit", (event) => {
   event.preventDefault();
-  // Keep permissions.request in the user gesture, before any awaited RPC.
-  let permission;
-  try {
-    permission = browser.permissions.request({
-      origins: [hostPermission($("url").value)],
-    });
-  } catch (error) {
-    notice(error.message, true);
-    return;
-  }
-  action(async () => {
-    if (!(await permission)) throw Error("서버 접근 권한이 필요합니다.");
-    const password = $("password").value;
-    $("password").value = "";
-    await rpc("connect", {
-      data: { url: $("url").value, id: $("sync-id").value, password },
-    });
-  });
+  action(() => connection.connect((data) => rpc("connect", { data })));
 });
+const connection = new ConnectionForm(
+  browser,
+  {
+    url: $("url"),
+    id: $("sync-id"),
+    password: $("password"),
+    permission: $("server-permission"),
+    credentials: $("credentials"),
+  },
+  notice,
+);
+$("grant-server").onclick = () => action(() => connection.grant());
 $("diagnose").onclick = () =>
   action(async () => {
     const report = await rpc("diagnose");
@@ -156,7 +155,19 @@ $("search").oninput = () => {
     }
   }, 200);
 };
-refresh().catch((error) => notice(error.message, true));
+async function initialize() {
+  const status = await rpc("status");
+  if (needsSetupTab(status.connected, location.search)) {
+    await browser.tabs.create({ url: browser.runtime.getURL("app.html") });
+    window.close();
+    return;
+  }
+  await connection.load(status);
+  connection.bind();
+  await refresh();
+  ready = true;
+}
+initialize().catch((error) => notice(error.message, true));
 setInterval(() => {
-  if (!busy) refresh().catch((error) => notice(error.message, true));
+  if (ready && !busy) refresh().catch((error) => notice(error.message, true));
 }, 1500);
