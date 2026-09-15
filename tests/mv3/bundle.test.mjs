@@ -12,6 +12,15 @@ for (const platform of ["firefox", "chromium"])
     const manifest = JSON.parse(
       fs.readFileSync(`build/mv3/${platform}/manifest.json`, "utf8"),
     );
+    const buildInfo = JSON.parse(
+      fs.readFileSync(`build/mv3/${platform}/build-info.json`, "utf8"),
+    );
+    assert.equal(buildInfo.platform, platform);
+    assert.match(buildInfo.sourceHash, /^[a-f0-9]{64}$/);
+    assert.ok(Number.isFinite(Date.parse(buildInfo.builtAt)));
+    const appSource = fs.readFileSync(`build/mv3/${platform}/app.js`, "utf8");
+    assert.ok(appSource.includes(buildInfo.sourceHash));
+    assert.ok(appSource.includes(buildInfo.builtAt));
     assert.equal(manifest.manifest_version, 3);
     assert.deepEqual(manifest.permissions, [
       "bookmarks",
@@ -125,6 +134,7 @@ for (const platform of ["firefox", "chromium"])
     const first = await boot()("status");
     assert.equal(first.ok, true);
     assert.equal(first.data.connected, false);
+    assert.deepEqual(JSON.parse(JSON.stringify(first.data.build)), buildInfo);
     const rpc = boot();
     rpc.installed({ reason: "update" });
     assert.equal(rpc.tabs.length, 0);
@@ -134,6 +144,10 @@ for (const platform of ["firefox", "chromium"])
     const restarted = await rpc("status");
     assert.equal(restarted.ok, true);
     assert.equal(restarted.data.enabled, false);
+    assert.deepEqual(
+      JSON.parse(JSON.stringify(restarted.data.build)),
+      buildInfo,
+    );
     const db = await new Promise((resolve, reject) => {
       const request = indexedDB.open("xbrowsersync-mv3-v1", 1);
       request.onsuccess = () => resolve(request.result);

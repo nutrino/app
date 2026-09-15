@@ -2,6 +2,7 @@ import browser from "webextension-polyfill";
 import { Store } from "./store.mjs";
 import { Native } from "./native.mjs";
 import { Engine } from "./engine.mjs";
+import { BUILD_INFO } from "./build-info.mjs";
 const engine = new Engine(
   new Store(),
   new Native(
@@ -70,7 +71,7 @@ browser.runtime.onMessage.addListener((message, sender) => {
       case "diagnose":
         return engine.diagnoseRestore();
       case "status":
-        return engine.status();
+        return { ...(await engine.status()), build: BUILD_INFO };
       case "connect":
         return engine.connect(message.data);
       case "restore":

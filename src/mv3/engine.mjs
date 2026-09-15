@@ -65,6 +65,15 @@ export class Engine {
       conflict: !!s.conflict,
       preview: !!s.preview,
       applying: !!s.apply,
+      restoreState: s.apply
+        ? {
+            phase: s.apply.phase,
+            cursor: s.apply.cursor,
+            total: s.apply.total,
+            passes: s.apply.orderPasses || 0,
+            moves: s.apply.orderMoves || 0,
+          }
+        : undefined,
     };
   }
   async save(s, entries = {}) {

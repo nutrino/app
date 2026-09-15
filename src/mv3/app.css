@@ -39,6 +39,15 @@ main {
 section {
   margin: 16px 0;
 }
+#build-info {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+  white-space: pre-line;
+}
+#build-match.error {
+  color: #b3261e;
+  font-weight: 600;
+}
 fieldset {
   border: 0;
   padding: 0;

@@ -17,6 +17,12 @@
     </header>
     <main>
       <p id="notice" role="status" aria-live="polite">실행부에 연결 중…</p>
+      <section id="build-info" aria-label="설치된 빌드 정보">
+        <p id="ui-build"></p>
+        <p id="runtime-build">실행부 빌드 확인 중…</p>
+        <p id="build-match" role="status"></p>
+        <p id="restore-state"></p>
+      </section>
       <section id="login" hidden>
         <form id="connect" autocomplete="off">
           <label
