@@ -197,3 +197,133 @@ for (const platform of ["firefox", "chromium"])
     );
     assert.equal((await rpc("status")).data.enabled, false);
   });
+
+for (const platform of ["firefox", "chromium"])
+  test(`${platform} app bundle routes direction selection and server folder navigation`, async () => {
+    const directory = `build/mv3/${platform}`;
+    const html = fs.readFileSync(`${directory}/app.html`, "utf8");
+    const build = JSON.parse(
+      fs.readFileSync(`${directory}/build-info.json`, "utf8"),
+    );
+    const element = () => ({
+      value: "",
+      textContent: "",
+      children: [],
+      dataset: {},
+      classList: { toggle() {} },
+      addEventListener() {},
+      replaceChildren() {
+        this.children = [];
+      },
+      append(child) {
+        this.children.push(child);
+      },
+    });
+    const nodes = new Map(
+      [...html.matchAll(/id="([^"]+)"/g)].map((m) => [m[1], element()]),
+    );
+    const get = (id) => {
+      assert.ok(nodes.has(id), `missing HTML element ${id}`);
+      return nodes.get(id);
+    };
+    const messages = [];
+    const state = {
+      connected: true,
+      mode: "download",
+      preview: true,
+      enabled: false,
+      url: "https://example.com",
+      id: "test",
+      build,
+    };
+    const storage = { get: async () => ({}), set: async () => {} };
+    const api = {
+      runtime: {
+        id: "test",
+        async sendMessage(message) {
+          messages.push(message);
+          if (message.type === "mode") state.mode = message.mode;
+          if (message.type === "server-list") {
+            const folders = message.options.view === "folders";
+            const child = message.options.parent === 3;
+            return {
+              ok: true,
+              data: {
+                total: 1,
+                offset: 0,
+                limit: 100,
+                path: child ? [{ id: 3, title: "Folder" }] : [],
+                items: [
+                  folders && !child
+                    ? { id: 3, title: "Folder", folder: true, count: 1 }
+                    : {
+                        id: 4,
+                        title: "<script>text only</script>",
+                        url: "javascript:alert(1)",
+                        folder: false,
+                      },
+                ],
+                lastUpdated: "test",
+                fetchedAt: "test",
+              },
+            };
+          }
+          return { ok: true, data: { ...state } };
+        },
+      },
+      storage: { local: storage, session: storage },
+      permissions: { contains: async () => true },
+    };
+    vm.runInNewContext(fs.readFileSync(`${directory}/app.js`, "utf8"), {
+      browser: api,
+      chrome: api,
+      TextEncoder,
+      TextDecoder,
+      URL,
+      URLSearchParams,
+      console,
+      document: {
+        getElementById: get,
+        querySelectorAll: () => [],
+        createElement: element,
+      },
+      location: { search: "" },
+      setInterval() {},
+      setTimeout,
+      clearTimeout,
+      confirm: () => true,
+    });
+    const flush = () => new Promise((resolve) => setImmediate(resolve));
+    await flush();
+    assert.equal(get("sync-mode").value, "download");
+    get("sync-mode").value = "both";
+    get("sync-mode").onchange();
+    await get("save-mode").onclick();
+    assert.equal(state.mode, "both");
+    assert.equal(get("save-mode").disabled, true);
+    get("view-folders").onclick();
+    await flush();
+    const folderButton = get("results").children[0].children[0];
+    assert.match(folderButton.textContent, /Folder/);
+    folderButton.onclick();
+    await flush();
+    assert.equal(messages.at(-1).options.parent, 3);
+    assert.equal(get("folder-path").children.length, 2);
+    assert.equal(
+      get("results").children[0].textContent,
+      "<script>text only</script>",
+    );
+    assert.equal(
+      get("results").children[0].children.length,
+      0,
+      "unsafe URL is plain text",
+    );
+    get("view-recent").onclick();
+    await flush();
+    assert.equal(messages.at(-1).options.view, "recent");
+    assert.equal(get("folder-path").children.length, 0);
+    assert.equal(
+      messages.some((m) => ["restore", "sync"].includes(m.type)),
+      false,
+    );
+  });

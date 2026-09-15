@@ -7,6 +7,21 @@ let state;
 let busy = false;
 let errorUntil = 0;
 let ready = false;
+let modeDirty = false;
+let libraryView = "recent",
+  libraryParent = null,
+  libraryOffset = 0;
+let libraryPage,
+  libraryLoading = false,
+  libraryRequest = 0,
+  libraryAccount;
+const modeText = {
+  download:
+    "서버를 기준으로 로컬의 차이만 반영합니다. 로컬 변경은 서버에 올리지 않으며, 서버에 없는 로컬 항목은 백업 후 삭제합니다.",
+  upload:
+    "로컬을 기준으로 서버를 갱신합니다. 서버에만 있는 자료는 서버 백업 후 덮어쓰며, 로컬 북마크는 변경하지 않습니다.",
+  both: "양쪽 변경을 반영합니다. 최초에는 양쪽 자료를 합치고, 이후 양쪽이 동시에 바뀌면 충돌 확인을 위해 멈춥니다.",
+};
 $("ui-build").textContent = "화면 · " + describeBuild(BUILD_INFO);
 async function rpc(type, data = {}) {
   const result = await browser.runtime.sendMessage({ type, ...data });
@@ -40,12 +55,26 @@ async function refresh() {
   $("summary").textContent =
     `${state.count ?? 0}개 항목 · 마지막 서버 저장: ${state.lastUpdated || "없음"}`;
   $("preview").hidden = !state.preview;
-  $("restore").textContent = state.initialUpload
-    ? "로컬 → 빈 서버 최초 업로드"
-    : "서버 → 로컬 단방향 동기화";
-  $("preview-description").textContent = state.initialUpload
-    ? "서버가 비어 있습니다. 로컬 북마크를 유지하고 서버에 처음 저장합니다."
-    : "서버 기준으로 로컬의 차이만 반영합니다. 같은 항목은 유지하고 서버에 없는 로컬 항목은 삭제합니다. 적용 전 사본은 자동 백업됩니다.";
+  if (!modeDirty) $("sync-mode").value = state.mode;
+  $("mode-description").textContent = modeText[$("sync-mode").value];
+  $("restore").textContent = "선택한 방식으로 최초 동기화";
+  $("preview-description").textContent = modeText[$("sync-mode").value];
+  const account = state.connected ? `${state.url}|${state.id}` : null;
+  if (libraryAccount !== account) {
+    libraryAccount = account;
+    modeDirty = false;
+    $("sync-mode").value = state.mode;
+    $("mode-description").textContent = modeText[state.mode];
+    $("preview-description").textContent = modeText[state.mode];
+    libraryRequest++;
+    libraryLoading = false;
+    libraryPage = undefined;
+    libraryParent = null;
+    libraryOffset = 0;
+    $("results").replaceChildren();
+    $("folder-path").replaceChildren();
+    $("library-status").textContent = "서버 목록을 새로 읽어 주세요.";
+  }
   $("conflict").hidden = !state.conflict;
   $("progress").hidden = !state.progress;
   $("rollback").hidden = !state.applying;
@@ -55,8 +84,7 @@ async function refresh() {
     $("progress").value = state.progress.done;
   }
   $("pause").textContent = state.enabled ? "일시 정지" : "동기화 재개";
-  $("disconnect").disabled = busy || state.applying;
-  $("sync").disabled = busy || state.preview || state.conflict;
+  updateControls();
   if (Date.now() > errorUntil)
     notice(
       state.error ||
@@ -80,7 +108,7 @@ async function action(fn) {
   } finally {
     busy = false;
     document.querySelectorAll("button").forEach((b) => (b.disabled = false));
-    if (state?.applying) $("disconnect").disabled = true;
+    updateControls();
   }
 }
 $("connect").addEventListener("submit", (event) => {
@@ -113,8 +141,50 @@ $("rollback").onclick = () =>
     )
       await rpc("rollback");
   });
-$("restore").onclick = () => action(() => rpc("restore"));
-$("sync").onclick = () => action(() => rpc("sync"));
+async function saveMode() {
+  const mode = $("sync-mode").value;
+  if (
+    !state.preview &&
+    mode !== state.mode &&
+    mode !== "both" &&
+    !confirm(modeText[mode] + " 이 방식을 자동 동기화에도 적용하시겠습니까?")
+  )
+    return false;
+  await rpc("mode", { mode });
+  modeDirty = false;
+  return true;
+}
+$("sync-mode").onchange = () => {
+  modeDirty = true;
+  $("mode-description").textContent = modeText[$("sync-mode").value];
+  $("preview-description").textContent = modeText[$("sync-mode").value];
+  updateControls();
+};
+$("save-mode").onclick = () => action(saveMode);
+$("restore").onclick = () =>
+  action(async () => {
+    if (
+      $("sync-mode").value === "download" &&
+      state.initialUpload &&
+      !confirm(
+        "서버가 비어 있어 로컬 북마크를 모두 삭제하게 됩니다. 로컬을 백업한 후 계속하시겠습니까?",
+      )
+    )
+      return;
+    if (
+      $("sync-mode").value === "upload" &&
+      !state.initialUpload &&
+      !confirm(
+        "서버의 현재 자료를 백업하고 로컬 자료로 덮어씁니다. 계속하시겠습니까?",
+      )
+    )
+      return;
+    if (await saveMode()) await rpc("restore");
+  });
+$("sync").onclick = () =>
+  action(async () => {
+    if (!modeDirty || (await saveMode())) await rpc("sync");
+  });
 $("pause").onclick = () =>
   action(() => rpc("pause", { enabled: !state.enabled }));
 $("disconnect").onclick = () => action(() => rpc("disconnect"));
@@ -152,27 +222,132 @@ $("import").onchange = () =>
     await rpc("import", { data });
     $("import").value = "";
   });
-let searchTimer;
-$("search").oninput = () => {
-  clearTimeout(searchTimer);
-  searchTimer = setTimeout(async () => {
-    const query = $("search").value.trim();
+function updateControls() {
+  if (!state) return;
+  $("disconnect").disabled = busy || state.applying || state.pending;
+  $("sync").disabled = busy || state.preview || state.conflict;
+  $("sync-mode").disabled = busy || state.applying || state.pending;
+  $("save-mode").disabled =
+    busy || state.applying || state.pending || !modeDirty;
+  $("list-previous").disabled =
+    busy || libraryLoading || !libraryPage || libraryPage.offset === 0;
+  $("list-next").disabled =
+    busy ||
+    libraryLoading ||
+    !libraryPage ||
+    libraryPage.offset + libraryPage.limit >= libraryPage.total;
+  for (const id of ["view-recent", "view-folders", "refresh-library"])
+    $(id).disabled = busy || libraryLoading || !state.connected;
+}
+async function loadLibrary(refreshServer = false) {
+  const request = ++libraryRequest;
+  libraryLoading = true;
+  updateControls();
+  $("library-status").textContent = "서버 북마크를 읽는 중…";
+  try {
+    const page = await rpc("server-list", {
+      options: {
+        view: libraryView,
+        parent: libraryParent,
+        offset: libraryOffset,
+        query: $("search").value,
+        refresh: refreshServer,
+      },
+    });
+    if (request !== libraryRequest) return;
+    libraryPage = page;
     $("results").replaceChildren();
-    if (!query) return;
-    const matches = await browser.bookmarks.search(query);
-    for (const bookmark of matches.slice(0, 100)) {
+    $("folder-path").replaceChildren();
+    if (libraryView === "folders") {
+      for (const crumb of [{ id: null, title: "전체 폴더" }, ...page.path]) {
+        const button = document.createElement("button");
+        button.textContent = crumb.title;
+        button.onclick = () => {
+          libraryParent = crumb.id;
+          libraryOffset = 0;
+          $("search").value = "";
+          loadLibrary();
+        };
+        $("folder-path").append(button);
+      }
+    }
+    for (const node of page.items) {
       const item = document.createElement("li");
-      if (/^https?:\/\//i.test(bookmark.url || "")) {
+      if (node.folder) {
+        const button = document.createElement("button");
+        button.textContent = `📁 ${node.title} (${node.count})`;
+        button.onclick = () => {
+          libraryParent = node.id;
+          libraryOffset = 0;
+          $("search").value = "";
+          loadLibrary();
+        };
+        item.append(button);
+      } else if (/^https?:\/\//i.test(node.url || "")) {
         const link = document.createElement("a");
-        link.textContent = bookmark.title || bookmark.url;
-        link.href = bookmark.url;
+        link.textContent = node.title;
+        link.href = node.url;
         link.target = "_blank";
         link.rel = "noopener noreferrer";
         item.append(link);
-      } else item.textContent = bookmark.title || bookmark.url || "(폴더)";
+      } else item.textContent = node.title;
       $("results").append(item);
     }
-  }, 200);
+    $("library-hint").textContent =
+      libraryView === "recent"
+        ? "최근 추가 순: 기존 xBrowserSync와 같은 서버 ID 내림차순입니다. 추가 날짜는 서버에 저장돼 있지 않습니다."
+        : "서버에 저장된 폴더 순서입니다. 폴더를 누르면 하위 항목을 표시합니다. 검색은 현재 폴더 안에서 수행합니다.";
+    $("library-status").textContent =
+      `${page.total}개 중 ${page.total ? page.offset + 1 : 0}–${Math.min(page.offset + page.limit, page.total)} · 서버 저장: ${page.lastUpdated} · 조회: ${page.fetchedAt}`;
+  } catch (error) {
+    if (request === libraryRequest)
+      $("library-status").textContent = error.message;
+  } finally {
+    if (request === libraryRequest) {
+      libraryLoading = false;
+      updateControls();
+    }
+  }
+}
+$("view-recent").onclick = () => {
+  libraryView = "recent";
+  libraryParent = null;
+  libraryOffset = 0;
+  loadLibrary();
+};
+$("view-folders").onclick = () => {
+  libraryView = "folders";
+  libraryParent = null;
+  libraryOffset = 0;
+  loadLibrary();
+};
+$("refresh-library").onclick = () => {
+  libraryParent = null;
+  libraryOffset = 0;
+  loadLibrary(true);
+};
+$("list-previous").onclick = () => {
+  libraryOffset = Math.max(0, libraryOffset - 100);
+  loadLibrary();
+};
+$("list-next").onclick = () => {
+  libraryOffset += 100;
+  loadLibrary();
+};
+$("server-library").ontoggle = () => {
+  if ($("server-library").open) {
+    libraryOffset = 0;
+    libraryParent = null;
+    loadLibrary(true);
+  }
+};
+let searchTimer;
+$("search").oninput = () => {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => {
+    libraryOffset = 0;
+    loadLibrary();
+  }, 250);
 };
 async function initialize() {
   const status = await rpc("status");

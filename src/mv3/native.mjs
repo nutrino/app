@@ -29,6 +29,22 @@ export class Native {
     this.bookmarks = bookmarks;
     this.firefox = firefox;
   }
+  initialKey(node) {
+    let url = node.url || "";
+    if (url) {
+      try {
+        const parsed = new URL(url);
+        url = this.firefox ? parsed.href : chromeAboutURL(parsed);
+      } catch {
+        /* Already validated or browser-local URL. */
+      }
+    }
+    return JSON.stringify([
+      !!node.children,
+      this.firefox ? node.title || "" : chromeTitle(node.title || ""),
+      url,
+    ]);
+  }
   async roots() {
     const tree = await this.bookmarks.getTree();
     const roots = tree[0].children || [];

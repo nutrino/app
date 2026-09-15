@@ -12,6 +12,10 @@ import {
   serviceURL,
   validateTree,
 } from "./protocol.mjs";
+import { mergeInitial, serverPage } from "./server-library.mjs";
+const MODES = ["download", "upload", "both"];
+const readTree = (remote, key) =>
+  remote.bookmarks === "" ? validateTree([]) : decrypt(remote.bookmarks, key);
 export class Engine {
   constructor(store, native, apiFactory = (config) => new Api(config)) {
     this.store = store;
@@ -65,6 +69,10 @@ export class Engine {
       conflict: !!s.conflict,
       preview: !!s.preview,
       initialUpload: !!s.initialUpload,
+      mode:
+        s.mode ||
+        (s.preview ? (s.initialUpload ? "upload" : "download") : "both"),
+      pending: !!s.pending,
       applying: !!s.apply,
       restoreState: s.apply
         ? {
@@ -83,8 +91,10 @@ export class Engine {
   connect({ url, id, password }) {
     return this.exclusive(async () => {
       const old = await this.state();
-      if (old.apply)
-        throw Error("진행 중인 복원이 끝난 후 계정을 바꿀 수 있습니다.");
+      if (old.apply || old.pending)
+        throw Error(
+          "진행 중인 복원 또는 서버 저장 확인이 끝난 후 계정을 바꿀 수 있습니다.",
+        );
       url = serviceURL(url);
       id = id.trim();
       if (!/^[a-zA-Z0-9_-]{16,128}$/.test(id) || !password)
@@ -109,10 +119,13 @@ export class Engine {
           enabled: false,
           preview: true,
           initialUpload: tree.every((root) => !root.children.length),
+          mode: tree.every((root) => !root.children.length)
+            ? "upload"
+            : "download",
           lastUpdated: remote.lastUpdated,
           count: countTree(tree),
         },
-        { preview: tree, remote: remote.bookmarks },
+        { preview: tree, remote: remote.bookmarks, serverView: undefined },
       );
       return this.status();
     });
@@ -149,13 +162,14 @@ export class Engine {
           "서버 내용이 변경되어 최초 동기화 방향을 다시 확인해야 합니다. 화면을 확인하고 다시 실행하세요.",
         );
       }
-      if (empty) {
+      if (s.mode === "upload" || (!s.mode && empty)) {
         const local = await this.native.snapshot(
           (await this.store.get("base")) || [],
           (await this.store.get("mapping")) || {},
         );
         const cipher = await encrypt(local.tree, s.config.key);
         await this.backup(local.tree);
+        await this.backupServer(tree);
         s.preview = false;
         s.initialUpload = false;
         s.enabled = true;
@@ -172,6 +186,24 @@ export class Engine {
           },
           preview: undefined,
         });
+      } else if (s.mode === "both") {
+        const local = await this.native.snapshot(
+          (await this.store.get("base")) || [],
+          (await this.store.get("mapping")) || {},
+        );
+        const merged = mergeInitial(tree, local.tree, (node) =>
+          this.native.initialKey(node),
+        );
+        await this.backupServer(tree);
+        await this.beginApply(
+          s,
+          merged,
+          remote.lastUpdated,
+          false,
+          await hash(local.tree),
+          true,
+          (await hash(merged)) !== (await hash(tree)),
+        );
       } else
         await this.beginApply(
           s,
@@ -191,6 +223,7 @@ export class Engine {
     pauseAfter = false,
     expectedHash,
     incremental = false,
+    uploadAfter = false,
   ) {
     tree = validateTree(tree);
     const base = (await this.store.get("base")) || [];
@@ -212,6 +245,7 @@ export class Engine {
       epoch: crypto.randomUUID(),
       lastUpdated,
       pauseAfter,
+      uploadAfter,
     };
     s.preview = false;
     s.initialUpload = false;
@@ -387,6 +421,16 @@ export class Engine {
       );
     }
     const epoch = s.apply.epoch;
+    const pendingUpload = s.apply.uploadAfter
+      ? {
+          cipher: await encrypt(local.tree, s.config.key),
+          lastUpdated: s.apply.lastUpdated,
+          tree: local.tree,
+          mapping: local.mapping,
+          hash: await hash(local.tree),
+        }
+      : undefined;
+    s.pending = !!pendingUpload;
     s.baseHash = s.apply.pauseAfter ? s.baseHash : await hash(local.tree);
     s.lastUpdated = s.apply.lastUpdated;
     s.enabled = !s.apply.pauseAfter;
@@ -402,6 +446,7 @@ export class Engine {
       target: undefined,
       orderPlan: undefined,
       preview: undefined,
+      pendingUpload,
     });
     await this.store.deletePrefix?.(`created:${epoch}:`);
   }
@@ -430,6 +475,61 @@ export class Engine {
     const created = (await this.store.get("created")) || {};
     for (const [key, value] of entries) created[key.split(":").at(-1)] = value;
     await this.store.put({ created });
+  }
+  async backupServer(tree) {
+    await this.store.put({
+      previousServerBackup: await this.store.get("serverBackup"),
+      serverBackup: tree,
+    });
+  }
+  setMode(mode) {
+    return this.exclusive(async () => {
+      if (!MODES.includes(mode)) throw Error("알 수 없는 동기화 방식입니다.");
+      const s = await this.state();
+      if (!s.config) throw Error("서버에 먼저 연결하세요.");
+      if (s.apply || s.pending)
+        throw Error(
+          "진행 중인 복원 또는 서버 저장 확인을 완료한 뒤 방식을 변경하세요.",
+        );
+      if (
+        mode !==
+        (s.mode ||
+          (s.preview ? (s.initialUpload ? "upload" : "download") : "both"))
+      ) {
+        s.mode = mode;
+        s.forceDirection = !s.preview && mode !== "both";
+        if (mode !== "both") {
+          s.conflict = false;
+          s.error = undefined;
+        }
+        await this.save(s);
+      } else if (!s.mode) {
+        s.mode = mode;
+        await this.save(s);
+      }
+      return this.status();
+    });
+  }
+  listServer(options = {}) {
+    return this.exclusive(async () => {
+      const s = await this.state();
+      if (!s.config) throw Error("서버에 먼저 연결하세요.");
+      let cached = await this.store.get("serverView");
+      if (options.refresh || !cached) {
+        const remote = await this.apiFactory(s.config).read();
+        cached = {
+          tree: await readTree(remote, s.config.key),
+          lastUpdated: remote.lastUpdated,
+          fetchedAt: new Date().toISOString(),
+        };
+        await this.store.put({ serverView: cached });
+      }
+      return {
+        ...serverPage(cached.tree, options),
+        lastUpdated: cached.lastUpdated,
+        fetchedAt: cached.fetchedAt,
+      };
+    });
   }
   tick() {
     return this.exclusive(async () => {
@@ -489,6 +589,55 @@ export class Engine {
         }
         const remoteChanged = remote.lastUpdated !== s.lastUpdated;
         const localChanged = localHash !== s.baseHash;
+        if (s.mode === "download" || s.mode === "upload") {
+          if (remoteChanged || localChanged || s.forceDirection || s.pending) {
+            const fullRemote =
+              remote.bookmarks === undefined ? await api.read() : remote;
+            const remoteTree = await readTree(fullRemote, s.config.key);
+            if ((await hash(remoteTree)) === localHash) {
+              s.baseHash = localHash;
+              s.lastUpdated = fullRemote.lastUpdated;
+              s.pending = false;
+              s.forceDirection = false;
+              s.error = undefined;
+              s.count = countTree(local.tree);
+              await this.save(s, {
+                base: local.tree,
+                mapping: local.mapping,
+                pendingUpload: undefined,
+              });
+            } else if (s.mode === "download") {
+              s.forceDirection = false;
+              await this.beginApply(
+                s,
+                remoteTree,
+                fullRemote.lastUpdated,
+                false,
+                localHash,
+                true,
+              );
+            } else {
+              await this.backupServer(remoteTree);
+              s.forceDirection = false;
+              s.pending = true;
+              s.error = undefined;
+              await this.save(s, {
+                pendingUpload: {
+                  cipher: await encrypt(local.tree, s.config.key),
+                  lastUpdated: fullRemote.lastUpdated,
+                  tree: local.tree,
+                  mapping: local.mapping,
+                  hash: localHash,
+                },
+              });
+            }
+          } else {
+            s.error = undefined;
+            s.checkedAt = new Date().toISOString();
+            await this.save(s);
+          }
+          return;
+        }
         if (remoteChanged && (localChanged || s.pending)) {
           const tree = await decrypt(remote.bookmarks, s.config.key);
           s.conflict = true;
@@ -544,6 +693,13 @@ export class Engine {
     return this.exclusive(async () => {
       const s = await this.state();
       if (!s.conflict) throw Error("충돌 상태가 아닙니다.");
+      if (
+        (s.mode === "download" && choice !== "server") ||
+        (s.mode === "upload" && choice !== "local")
+      )
+        throw Error(
+          "선택한 동기화 방향과 다른 충돌 해결입니다. 먼저 방식을 변경하세요.",
+        );
       const api = this.apiFactory(s.config);
       const remote = await api.read();
       const remoteTree = await decrypt(remote.bookmarks, s.config.key);
@@ -595,13 +751,18 @@ export class Engine {
   disconnect() {
     return this.exclusive(async () => {
       const s = await this.state();
-      if (s.apply)
+      if (s.apply || s.pending)
         throw Error(
-          "복원이 끝날 때까지 연결을 해제할 수 없습니다. 일시 정지는 가능합니다.",
+          "복원 또는 서버 저장 확인이 끝날 때까지 연결을 해제할 수 없습니다. 일시 정지는 가능합니다.",
         );
       await this.save(
         { enabled: false },
-        { pendingUpload: undefined, preview: undefined, remote: undefined },
+        {
+          pendingUpload: undefined,
+          preview: undefined,
+          remote: undefined,
+          serverView: undefined,
+        },
       );
       return this.status();
     });
@@ -615,9 +776,14 @@ export class Engine {
       return { format: "xbrowsersync-mv3-backup", bookmarks: s.tree };
     }
     if (
-      !["backup", "previousBackup", "conflictLocal", "conflictRemote"].includes(
-        kind,
-      )
+      ![
+        "backup",
+        "previousBackup",
+        "conflictLocal",
+        "conflictRemote",
+        "serverBackup",
+        "previousServerBackup",
+      ].includes(kind)
     )
       throw Error("알 수 없는 백업 종류입니다.");
     const data = await this.store.get(kind);

@@ -70,6 +70,22 @@ input {
   background: white;
   color: #182737;
 }
+select {
+  display: block;
+  width: 100%;
+  padding: 10px;
+  margin-top: 5px;
+  font: inherit;
+}
+#results {
+  overflow-wrap: anywhere;
+}
+#results li {
+  margin: 8px 0;
+}
+#folder-path button {
+  padding: 4px 8px;
+}
 button {
   padding: 9px 12px;
   margin: 4px 4px 4px 0;

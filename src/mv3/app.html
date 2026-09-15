@@ -67,6 +67,16 @@
       <section id="account" hidden>
         <p id="server"></p>
         <p id="summary"></p>
+        <label
+          >동기화 방식
+          <select id="sync-mode">
+            <option value="download">서버 → 로컬</option>
+            <option value="upload">로컬 → 서버</option>
+            <option value="both">양방향</option>
+          </select>
+        </label>
+        <p id="mode-description" class="hint"></p>
+        <button id="save-mode">동기화 방식 저장</button>
         <progress id="progress" hidden></progress>
         <div id="preview" hidden>
           <p id="preview-description">
@@ -104,6 +114,8 @@
         <button data-export="current">현재 북마크 다운로드</button
         ><button data-export="backup">교체 전 자동 백업 다운로드</button
         ><button data-export="previousBackup">이전 자동 백업 다운로드</button
+        ><button data-export="serverBackup">
+          덮어쓰기 전 서버 백업 다운로드</button
         ><label
           >백업 JSON 복원<input
             id="import"
@@ -111,12 +123,27 @@
             accept="application/json,.json"
         /></label>
       </details>
-      <details>
-        <summary>북마크 검색</summary>
+      <details id="server-library">
+        <summary>서버 북마크 보기</summary>
+        <div class="actions">
+          <button id="view-recent">최근 추가 순</button>
+          <button id="view-folders">폴더 구조</button>
+          <button id="refresh-library">서버 목록 새로 읽기</button>
+        </div>
+        <p id="library-hint" class="hint">
+          최근 추가 순은 기존 xBrowserSync와 같은 서버 ID 내림차순입니다.
+        </p>
+        <nav id="folder-path" aria-label="서버 폴더 경로"></nav>
         <label
-          >제목·주소<input id="search" type="search" placeholder="검색어"
+          >제목·주소·태그<input
+            id="search"
+            type="search"
+            placeholder="서버 북마크 검색"
         /></label>
+        <p id="library-status" role="status"></p>
         <ul id="results"></ul>
+        <button id="list-previous">이전 100개</button>
+        <button id="list-next">다음 100개</button>
       </details>
       <footer>
         자동 동기화: 약 1분 간격 · 북마크 변경 시 자동 실행<br />복원이 끝날

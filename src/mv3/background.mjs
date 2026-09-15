@@ -72,6 +72,10 @@ browser.runtime.onMessage.addListener((message, sender) => {
         return engine.diagnoseRestore();
       case "status":
         return { ...(await engine.status()), build: BUILD_INFO };
+      case "mode":
+        return engine.setMode(message.mode);
+      case "server-list":
+        return engine.listServer(message.options);
       case "connect":
         return engine.connect(message.data);
       case "restore":
@@ -97,7 +101,9 @@ browser.runtime.onMessage.addListener((message, sender) => {
   };
   return dispatch().then(
     (data) => {
-      if (!["status", "export", "diagnose"].includes(message.type))
+      if (
+        !["status", "export", "diagnose", "server-list"].includes(message.type)
+      )
         schedule(50);
       return { ok: true, data };
     },

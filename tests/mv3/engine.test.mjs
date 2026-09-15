@@ -1044,3 +1044,219 @@ test("Chrome identical initial download does not create an unnecessary empty Men
   await finishInitial(c);
   assert.deepEqual(await c.store.get("base"), target);
 });
+
+async function settle(c) {
+  for (let i = 0; i < 20; i++) {
+    await c.engine.tick();
+    const status = await c.engine.status();
+    assert.equal(status.error, undefined);
+    if (!status.applying && !status.pending) return;
+  }
+  assert.fail("sync did not settle");
+}
+function syncNative(c, id) {
+  return c.store
+    .get("mapping")
+    .then((mapping) =>
+      c.bookmarks.find(Object.keys(mapping).find((key) => mapping[key] === id)),
+    );
+}
+for (const firefox of [true, false]) {
+  test(`${firefox ? "Firefox" : "Chrome"} download mode persists and never uploads local edits`, async () => {
+    const c = await setup(firefox);
+    await restore(c);
+    await c.engine.setMode("download");
+    (await syncNative(c, 4)).title = "local edit to discard";
+    const remote = structuredClone(tree);
+    remote[0].children[0].children[0].title = "server edit";
+    c.server.bookmarks = await encrypt(remote, key);
+    c.server.lastUpdated = "2026-02-01T00:00:00Z";
+    c.engine = new Engine(c.store, c.native, () => c.api);
+    await settle(c);
+    assert.equal((await c.engine.status()).mode, "download");
+    assert.equal((await syncNative(c, 4)).title, "server edit");
+    assert.equal(c.writes(), 0);
+    assert.equal((await c.engine.status()).conflict, false);
+  });
+  test(`${firefox ? "Firefox" : "Chrome"} upload mode preserves local tree and backs up remote-only edits`, async () => {
+    const c = await setup(firefox);
+    await restore(c);
+    (await syncNative(c, 4)).title = "local authoritative";
+    const before = await c.bookmarks.getTree();
+    const remote = structuredClone(tree);
+    remote[0].children[0].children[0].title = "remote to back up";
+    c.server.bookmarks = await encrypt(remote, key);
+    c.server.lastUpdated = "2026-02-01T00:00:00Z";
+    await c.engine.setMode("upload");
+    c.api.loseResponse = true;
+    await c.engine.tick(); // Persist upload intent.
+    await c.engine.tick(); // Server applies it but response is lost.
+    assert.match((await c.engine.status()).error, /response lost/);
+    await settle(c);
+    assert.equal(c.writes(), 1);
+    assert.deepEqual(await c.bookmarks.getTree(), before);
+    assert.equal(
+      (await decrypt(c.server.bookmarks, key))[0].children[0].children[0].title,
+      "local authoritative",
+    );
+    assert.deepEqual((await c.engine.export("serverBackup")).bookmarks, remote);
+  });
+  test(`${firefox ? "Firefox" : "Chrome"} initial two-way merges both sides before uploading`, async () => {
+    const c = await setup(firefox);
+    const root = firefox ? "toolbar_____" : "1";
+    await c.bookmarks.create({
+      parentId: root,
+      title: "local only",
+      url: "https://local-only.example/",
+    });
+    await c.engine.setMode("both");
+    await c.engine.startRestore();
+    await settle(c);
+    const server = await decrypt(c.server.bookmarks, key);
+    assert.ok(
+      server[0].children.some(
+        (node) => node.url === "https://local-only.example/",
+      ),
+    );
+    assert.ok(server[0].children.some((node) => node.id === 3));
+    assert.equal(
+      await hash(
+        (
+          await c.native.snapshot(
+            await c.store.get("base"),
+            await c.store.get("mapping"),
+          )
+        ).tree,
+      ),
+      await hash(server),
+    );
+    assert.equal(c.writes(), 1);
+    assert.deepEqual(await c.store.get("serverBackup"), tree);
+  });
+}
+
+test("initial upload mode replaces populated server but never restores its bookmarks locally", async () => {
+  const c = await setup();
+  await c.bookmarks.create({
+    parentId: "toolbar_____",
+    title: "local source",
+    url: "https://local-source.example/",
+  });
+  const before = await c.bookmarks.getTree();
+  await c.engine.setMode("upload");
+  await c.engine.startRestore();
+  await settle(c);
+  assert.deepEqual(await c.bookmarks.getTree(), before);
+  const server = await decrypt(c.server.bookmarks, key);
+  assert.equal(server[0].children.length, 1);
+  assert.equal(server[0].children[0].title, "local source");
+  assert.deepEqual(await c.store.get("serverBackup"), tree);
+});
+
+test("direction cannot switch during restore or an uncertain upload", async () => {
+  const c = await setup();
+  await c.engine.startRestore();
+  await assert.rejects(c.engine.setMode("upload"), /진행 중/);
+  await settle(c);
+  await c.engine.setMode("upload");
+  (await syncNative(c, 4)).title = "new";
+  await c.engine.tick();
+  await assert.rejects(c.engine.setMode("download"), /진행 중/);
+  await assert.rejects(c.engine.disconnect(), /저장 확인/);
+  await assert.rejects(c.engine.setMode("invalid"), /알 수 없는/);
+});
+
+test("two-way mode still stops concurrent edits and server browsing stays read-only", async () => {
+  const c = await setup();
+  await restore(c);
+  await c.engine.setMode("both");
+  (await syncNative(c, 4)).title = "local change";
+  const remote = structuredClone(tree);
+  remote[0].children[0].children[0].title = "remote change";
+  c.server.bookmarks = await encrypt(remote, key);
+  c.server.lastUpdated = "2026-02-01T00:00:00Z";
+  await c.engine.tick();
+  assert.equal((await c.engine.status()).conflict, true);
+  const before = await c.engine.state();
+  const nativeBefore = await c.bookmarks.getTree();
+  const recent = await c.engine.listServer({ refresh: true });
+  assert.deepEqual(
+    recent.items.map((node) => node.id),
+    [7, 6, 4],
+  );
+  assert.equal(
+    recent.items.find((node) => node.id === 4).title,
+    "remote change",
+  );
+  const folders = await c.engine.listServer({ view: "folders", parent: 3 });
+  assert.equal(folders.items[0].title, "remote change");
+  assert.deepEqual(
+    folders.path.map((node) => node.id),
+    [0, 3],
+  );
+  assert.deepEqual(await c.engine.state(), before);
+  assert.deepEqual(await c.bookmarks.getTree(), nativeBefore);
+  assert.equal(c.writes(), 0);
+});
+
+test("initial two-way defers upload and detects a concurrent server revision", async () => {
+  const c = await setup();
+  await c.bookmarks.create({
+    parentId: "toolbar_____",
+    title: "local",
+    url: "https://local.example/",
+  });
+  await c.engine.setMode("both");
+  await c.engine.startRestore();
+  while ((await c.engine.status()).applying) await c.engine.tick();
+  c.server.lastUpdated = "2026-02-01T00:00:00Z";
+  const remote = structuredClone(tree);
+  remote[0].children.push({
+    id: 20,
+    title: "new remote",
+    url: "https://new-remote.example/",
+  });
+  c.server.bookmarks = await encrypt(remote, key);
+  await c.engine.tick();
+  assert.equal((await c.engine.status()).conflict, true);
+  assert.equal(c.writes(), 0);
+});
+
+test("explicit initial download from an empty server backs up and removes local data without uploading", async () => {
+  const c = await setup();
+  await c.bookmarks.create({
+    parentId: "toolbar_____",
+    title: "local",
+    url: "https://local.example/",
+  });
+  c.server.bookmarks = "";
+  const s = await c.engine.state();
+  s.initialUpload = true;
+  await c.store.put({ state: s });
+  await c.engine.setMode("download");
+  await c.engine.startRestore();
+  await settle(c);
+  assert.equal(c.bookmarks.find("toolbar_____").children.length, 0);
+  assert.equal((await c.store.get("backup")).bookmarks[0].children.length, 1);
+  assert.equal(c.writes(), 0);
+});
+
+test("initial two-way with an empty server preserves and uploads local bookmarks", async () => {
+  const c = await setup();
+  await c.bookmarks.create({
+    parentId: "toolbar_____",
+    title: "local",
+    url: "https://local.example/",
+  });
+  c.server.bookmarks = "";
+  const s = await c.engine.state();
+  s.initialUpload = true;
+  await c.store.put({ state: s });
+  const before = await c.bookmarks.getTree();
+  await c.engine.setMode("both");
+  await c.engine.startRestore();
+  await settle(c);
+  assert.deepEqual(await c.bookmarks.getTree(), before);
+  assert.equal((await decrypt(c.server.bookmarks, key))[0].children.length, 1);
+  assert.equal(c.writes(), 1);
+});
