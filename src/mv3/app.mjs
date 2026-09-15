@@ -40,6 +40,12 @@ async function refresh() {
   $("summary").textContent =
     `${state.count ?? 0}개 항목 · 마지막 서버 저장: ${state.lastUpdated || "없음"}`;
   $("preview").hidden = !state.preview;
+  $("restore").textContent = state.initialUpload
+    ? "로컬 → 빈 서버 최초 업로드"
+    : "서버 → 로컬 단방향 동기화";
+  $("preview-description").textContent = state.initialUpload
+    ? "서버가 비어 있습니다. 로컬 북마크를 유지하고 서버에 처음 저장합니다."
+    : "서버 기준으로 로컬의 차이만 반영합니다. 같은 항목은 유지하고 서버에 없는 로컬 항목은 삭제합니다. 적용 전 사본은 자동 백업됩니다.";
   $("conflict").hidden = !state.conflict;
   $("progress").hidden = !state.progress;
   $("rollback").hidden = !state.applying;

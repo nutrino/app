@@ -69,11 +69,11 @@
         <p id="summary"></p>
         <progress id="progress" hidden></progress>
         <div id="preview" hidden>
-          <p>
-            서버 북마크를 적용하면 이 브라우저의 북마크를 교체합니다. 교체 전
-            사본은 확장 내부에 자동 백업됩니다.
+          <p id="preview-description">
+            서버 기준으로 로컬의 차이만 반영합니다. 같은 항목은 유지하고 서버에
+            없는 로컬 항목은 삭제합니다. 적용 전 사본은 자동 백업됩니다.
           </p>
-          <button id="restore">로컬 백업 후 서버에서 복원</button>
+          <button id="restore">서버 → 로컬 단방향 동기화</button>
         </div>
         <div id="conflict" hidden>
           <p>

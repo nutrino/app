@@ -148,7 +148,7 @@ export class Native {
     }
     return { tree: validateTree(tree), mapping: outputMap };
   }
-  async plan(tree) {
+  async plan(tree, incremental = false) {
     const roots = await this.roots();
     const steps = [];
     const rootMap = {};
@@ -167,6 +167,14 @@ export class Native {
         rootMap[node.id] = roots[title].id;
         walk(node.children, node.id);
       } else if (node) {
+        if (
+          incremental &&
+          !node.children.length &&
+          !roots[ROOTS[2]].children.some(
+            (child) => child.title === ROOTS[1] && child.children,
+          )
+        )
+          continue;
         // A wrapper is included even for an empty menu; it has an ordinary sync ID.
         const other = tree.find((n) => n.title === ROOTS[2]);
         if (!other)
@@ -183,14 +191,13 @@ export class Native {
     }
     if (!this.firefox) {
       const other = tree.find((n) => n.title === ROOTS[2]);
+      const menu = tree.find((n) => n.title === ROOTS[1]);
+      const offset = steps.some((step) => step.node.id === menu.id) ? 1 : 0;
       for (const step of steps)
-        if (
-          step.parent === other.id &&
-          step.node.id !== tree.find((n) => n.title === ROOTS[1]).id
-        )
-          step.index += 1;
+        if (step.parent === other.id && step.node.id !== menu.id)
+          step.index += offset;
     }
-    return {
+    const plan = {
       steps,
       rootMap,
       // Removing the tail avoids repeatedly shifting every following sibling in Places.
@@ -199,6 +206,90 @@ export class Native {
         root.children.map((child) => child.id).reverse(),
       ),
     };
+    if (incremental) this.matchExisting(plan, roots);
+    return plan;
+  }
+  matchExisting(plan, roots) {
+    plan.incremental = true;
+    plan.reused = {};
+    plan.updates = {};
+    const nodes = new Map();
+    const visit = (node) => {
+      nodes.set(node.id, node);
+      node.children?.forEach(visit);
+    };
+    Object.values(roots).forEach(visit);
+    const used = new Set(Object.values(plan.rootMap));
+    const queues = new Map();
+    const key = (node) => {
+      if (
+        node.type === "separator" ||
+        node.url === SEPARATOR ||
+        (node.url === "chrome://newtab/" &&
+          (node.title === "|" || /^─+$/.test(node.title)))
+      )
+        return "separator";
+      if (node.url === undefined)
+        return `folder:${this.firefox ? node.title || "" : chromeTitle(node.title || "")}`;
+      try {
+        const url = new URL(node.url);
+        return `url:${this.firefox ? url.href : chromeAboutURL(url)}`;
+      } catch {
+        return `url:${node.url}`;
+      }
+    };
+    const take = (list) => {
+      while (list?.length) {
+        const node = list.pop();
+        if (!used.has(node.id)) return node;
+      }
+    };
+    for (const step of plan.steps) {
+      const parent = plan.rootMap[step.parent] || plan.reused[step.parent];
+      if (!parent) continue;
+      if (!queues.has(parent)) {
+        const byKey = new Map(),
+          exact = new Map();
+        for (const child of [...nodes.get(parent).children].reverse()) {
+          const k = key(child),
+            e = JSON.stringify([k, child.title || ""]);
+          if (!byKey.has(k)) byKey.set(k, []);
+          if (!exact.has(e)) exact.set(e, []);
+          byKey.get(k).push(child);
+          exact.get(e).push(child);
+        }
+        queues.set(parent, { byKey, exact });
+      }
+      const spec = this.createSpec(step, parent),
+        k = key(spec);
+      const { byKey, exact } = queues.get(parent);
+      const candidate =
+        take(exact.get(JSON.stringify([k, spec.title || ""]))) ||
+        take(byKey.get(k));
+      if (!candidate) continue;
+      used.add(candidate.id);
+      plan.reused[step.node.id] = candidate.id;
+      if (!this.matches(candidate, spec))
+        plan.updates[step.node.id] = { title: spec.title };
+    }
+    plan.clear = [];
+    const collect = (node) => {
+      for (const child of [...(node.children || [])].reverse()) {
+        if (used.has(child.id)) collect(child);
+        else plan.clear.push(child.id);
+      }
+    };
+    Object.values(roots).forEach(collect);
+    const counts = {};
+    for (const step of plan.steps)
+      if (plan.reused[step.node.id])
+        counts[step.parent] = (counts[step.parent] || 0) + 1;
+    // Append new items so interrupted creates never collide with retained siblings.
+    for (const step of plan.steps)
+      if (!plan.reused[step.node.id]) {
+        step.appendIndex = counts[step.parent] || 0;
+        counts[step.parent] = step.appendIndex + 1;
+      }
   }
   createSpec(step, parentId) {
     const spec = { parentId, index: step.index, title: step.node.title || "" };

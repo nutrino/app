@@ -98,6 +98,11 @@ export class Bookmarks {
     parent.children.splice(index, 0, parent.children.splice(from, 1)[0]);
     return structuredClone(node);
   }
+  async update(id, changes) {
+    const node = this.find(id);
+    Object.assign(node, changes);
+    return structuredClone(node);
+  }
 }
 const tree = validateTree([
   {
@@ -391,6 +396,14 @@ test("76,010-item encrypted dataset restores with metadata intact", async () => 
   assert.equal((await c.engine.status()).count, 76010);
   assert.equal((await c.engine.status()).applying, false);
   assert.equal(await hash(await c.store.get("base")), await hash(large));
+  await previewAgain(c);
+  for (const op of ["create", "update", "move", "removeTree"])
+    c.bookmarks[op] = async () =>
+      assert.fail(`identical large download called ${op}`);
+  await c.engine.startRestore();
+  await finishInitial(c);
+  assert.equal(await hash(await c.store.get("base")), await hash(large));
+  assert.equal(c.writes(), 0);
 });
 test("local edit while remote read is pending is not discarded", async () => {
   const c = await setup();
@@ -813,4 +826,221 @@ test("Chrome Other order repair includes its synthetic Menu wrapper", async () =
   assert.equal((await c.engine.status()).error, undefined);
   assert.equal((await c.engine.status()).applying, false);
   assert.equal(await hash(await c.store.get("base")), await hash(c.target));
+});
+
+async function previewAgain(c) {
+  const s = await c.engine.state();
+  s.preview = true;
+  s.enabled = false;
+  s.initialUpload = false;
+  await c.store.put({ state: s, base: undefined, mapping: undefined });
+}
+async function finishInitial(c) {
+  for (let i = 0; i < 10; i++) {
+    await c.engine.tick();
+    const s = await c.engine.status();
+    assert.equal(s.error, undefined);
+    if (!s.applying) return;
+  }
+  assert.fail("initial download did not finish");
+}
+for (const firefox of [true, false]) {
+  test(`${firefox ? "Firefox" : "Chrome"} identical initial download preserves every native ID with zero mutations`, async () => {
+    const c = await setup(firefox);
+    await restore(c);
+    const before = await c.bookmarks.getTree();
+    await previewAgain(c);
+    for (const op of ["create", "update", "move", "removeTree"])
+      c.bookmarks[op] = async () =>
+        assert.fail(`identical download called ${op}`);
+    await c.engine.startRestore();
+    await finishInitial(c);
+    assert.deepEqual(await c.bookmarks.getTree(), before);
+    assert.deepEqual(await c.store.get("base"), tree);
+    assert.equal(c.writes(), 0);
+    await c.engine.tick();
+    assert.equal(c.writes(), 0);
+  });
+  test(`${firefox ? "Firefox" : "Chrome"} initial download updates only differences and preserves matching nodes`, async () => {
+    const c = await setup(firefox);
+    await restore(c);
+    const mapping = await c.store.get("mapping");
+    const original = Object.fromEntries(
+      Object.entries(mapping).map(([native, id]) => [id, native]),
+    );
+    c.bookmarks.find(original[4]).title = "local changed title";
+    await c.bookmarks.create({
+      parentId: original[3],
+      title: "local extra",
+      url: "https://local.example/",
+    });
+    const target = structuredClone(tree);
+    target[0].children.reverse();
+    target[0].children.push({
+      id: 9,
+      title: "server new",
+      url: "https://server.example/",
+    });
+    c.server.bookmarks = await encrypt(target, key);
+    await previewAgain(c);
+    let removed = 0,
+      created = 0,
+      updated = 0;
+    for (const op of ["create", "update", "removeTree"]) {
+      const call = c.bookmarks[op].bind(c.bookmarks);
+      c.bookmarks[op] = async (...args) => {
+        if (op === "create") created++;
+        if (op === "update") updated++;
+        if (op === "removeTree") removed++;
+        return call(...args);
+      };
+    }
+    await c.engine.startRestore();
+    await finishInitial(c);
+    assert.equal(created, 1);
+    assert.equal(updated, 1);
+    assert.equal(removed, 1);
+    assert.equal(
+      c.bookmarks.find(original[4]).title,
+      tree[0].children[0].children[0].title,
+    );
+    assert.ok(c.bookmarks.find(original[3]));
+    assert.deepEqual(await c.store.get("base"), target);
+    assert.equal(c.writes(), 0);
+  });
+}
+
+test("initial download with retained siblings resumes a lost append response without duplicates", async () => {
+  const c = await setup();
+  await restore(c);
+  const target = structuredClone(tree);
+  target[0].children.unshift({
+    id: 20,
+    title: "new first",
+    url: "https://first.example/",
+  });
+  c.server.bookmarks = await encrypt(target, key);
+  await previewAgain(c);
+  await c.engine.startRestore();
+  const next = c.bookmarks.next;
+  c.bookmarks.crash = true;
+  await c.engine.tick();
+  assert.match((await c.engine.status()).error, /simulated crash/);
+  c.engine = new Engine(c.store, c.native, () => c.api);
+  await c.engine.pause(true);
+  await finishInitial(c);
+  assert.equal(c.bookmarks.next, next + 1);
+  assert.deepEqual(await c.store.get("base"), target);
+});
+
+test("duplicate URLs are matched one-to-one without deleting identical bookmarks", async () => {
+  const c = await setup();
+  const target = structuredClone(tree);
+  target[0].children = [
+    { id: 20, title: "one", url: "https://same.example/" },
+    { id: 21, title: "two", url: "https://same.example/" },
+    { id: 22, title: "two", url: "https://same.example/" },
+  ];
+  c.server.bookmarks = await encrypt(target, key);
+  await restore(c);
+  const next = c.bookmarks.next;
+  await previewAgain(c);
+  await c.engine.startRestore();
+  await finishInitial(c);
+  assert.equal(c.bookmarks.next, next);
+  assert.deepEqual(await c.store.get("base"), target);
+});
+
+for (const raw of [false, true])
+  test(`empty ${raw ? "uninitialized" : "encrypted"} server uploads local data without deletion and recovers lost response`, async () => {
+    const c = await setup();
+    await restore(c);
+    const before = await c.bookmarks.getTree();
+    c.server.bookmarks = raw ? "" : await encrypt(validateTree([]), key);
+    await previewAgain(c);
+    const state = await c.engine.state();
+    state.initialUpload = true;
+    await c.store.put({ state });
+    for (const op of ["create", "update", "move", "removeTree"])
+      c.bookmarks[op] = async () =>
+        assert.fail(`empty server mutated local with ${op}`);
+    await c.engine.startRestore();
+    c.api.loseResponse = true;
+    await c.engine.tick();
+    assert.equal(c.writes(), 1);
+    await c.engine.tick();
+    assert.equal((await c.engine.status()).error, undefined);
+    assert.equal((await c.engine.state()).pending, false);
+    assert.equal(c.writes(), 1);
+    assert.deepEqual(await c.bookmarks.getTree(), before);
+    assert.equal(
+      await hash(await decrypt(c.server.bookmarks, key)),
+      await hash(await c.store.get("base")),
+    );
+  });
+
+test("initial sync asks to review when server emptiness changes after preview", async () => {
+  const c = await setup();
+  c.server.bookmarks = await encrypt(validateTree([]), key);
+  await assert.rejects(c.engine.startRestore(), /방향을 다시 확인/);
+  assert.equal((await c.engine.status()).initialUpload, true);
+  assert.equal((await c.engine.status()).applying, false);
+  assert.equal(c.writes(), 0);
+});
+
+test("API accepts empty new IDs but does not treat malformed data as an empty account", async () => {
+  const api = new Api({ id: "test", url: "https://example.org" });
+  for (const bookmarks of [null, undefined, ""]) {
+    api.request = async () => ({
+      bookmarks,
+      lastUpdated: "2026-09-16T00:00:00Z",
+    });
+    assert.equal((await api.read()).bookmarks, "");
+  }
+  api.request = async () => ({
+    bookmarks: 123,
+    lastUpdated: "2026-09-16T00:00:00Z",
+  });
+  await assert.rejects(api.read(), /형식/);
+  api.request = async () => ({ bookmarks: "" });
+  await assert.rejects(api.read(), /형식/);
+});
+
+test("connecting a new empty ID previews upload without mutating local or server", async () => {
+  const c = await setup();
+  await restore(c);
+  const before = await c.bookmarks.getTree();
+  c.server.bookmarks = "";
+  await c.engine.connect({
+    url: "https://example.org",
+    id: "0123456789abcdef0123456789abcdef",
+    password: "test-password-only",
+  });
+  assert.equal((await c.engine.status()).initialUpload, true);
+  assert.equal((await c.engine.status()).preview, true);
+  assert.equal(c.writes(), 0);
+  assert.deepEqual(await c.bookmarks.getTree(), before);
+});
+
+test("Chrome identical initial download does not create an unnecessary empty Menu wrapper", async () => {
+  const c = await setup(false);
+  const target = validateTree([
+    {
+      id: 0,
+      title: ROOTS[0],
+      children: [{ id: 4, title: "same", url: "https://same.example/" }],
+    },
+  ]);
+  c.server.bookmarks = await encrypt(target, key);
+  await c.bookmarks.create({
+    parentId: "1",
+    title: "same",
+    url: "https://same.example/",
+  });
+  for (const op of ["create", "update", "move", "removeTree"])
+    c.bookmarks[op] = async () =>
+      assert.fail(`identical Chrome data called ${op}`);
+  await c.engine.startRestore();
+  await finishInitial(c);
+  assert.deepEqual(await c.store.get("base"), target);
 });

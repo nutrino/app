@@ -64,6 +64,7 @@ export class Engine {
       count: s.count,
       conflict: !!s.conflict,
       preview: !!s.preview,
+      initialUpload: !!s.initialUpload,
       applying: !!s.apply,
       restoreState: s.apply
         ? {
@@ -97,13 +98,17 @@ export class Engine {
         );
       config.version = version.version;
       const remote = await api.read();
-      const tree = await decrypt(remote.bookmarks, config.key);
+      const tree =
+        remote.bookmarks === ""
+          ? validateTree([])
+          : await decrypt(remote.bookmarks, config.key);
       // Authentication and schema validation finish before replacing the active configuration.
       await this.save(
         {
           config,
           enabled: false,
           preview: true,
+          initialUpload: tree.every((root) => !root.children.length),
           lastUpdated: remote.lastUpdated,
           count: countTree(tree),
         },
@@ -130,12 +135,63 @@ export class Engine {
         throw Error("서버 데이터 미리보기가 필요합니다.");
       // Fetch once more: a stale preview must never overwrite a newer server revision.
       const remote = await this.apiFactory(s.config).read();
-      const tree = await decrypt(remote.bookmarks, s.config.key);
-      await this.beginApply(s, tree, remote.lastUpdated);
+      const tree =
+        remote.bookmarks === ""
+          ? validateTree([])
+          : await decrypt(remote.bookmarks, s.config.key);
+      const empty = tree.every((root) => !root.children.length);
+      if (empty !== !!s.initialUpload) {
+        s.initialUpload = empty;
+        s.count = countTree(tree);
+        s.lastUpdated = remote.lastUpdated;
+        await this.save(s, { preview: tree, remote: remote.bookmarks });
+        throw Error(
+          "서버 내용이 변경되어 최초 동기화 방향을 다시 확인해야 합니다. 화면을 확인하고 다시 실행하세요.",
+        );
+      }
+      if (empty) {
+        const local = await this.native.snapshot(
+          (await this.store.get("base")) || [],
+          (await this.store.get("mapping")) || {},
+        );
+        const cipher = await encrypt(local.tree, s.config.key);
+        await this.backup(local.tree);
+        s.preview = false;
+        s.initialUpload = false;
+        s.enabled = true;
+        s.pending = true;
+        s.error = undefined;
+        s.lastUpdated = remote.lastUpdated;
+        await this.save(s, {
+          pendingUpload: {
+            cipher,
+            lastUpdated: remote.lastUpdated,
+            tree: local.tree,
+            mapping: local.mapping,
+            hash: await hash(local.tree),
+          },
+          preview: undefined,
+        });
+      } else
+        await this.beginApply(
+          s,
+          tree,
+          remote.lastUpdated,
+          false,
+          undefined,
+          true,
+        );
       return this.status();
     });
   }
-  async beginApply(s, tree, lastUpdated, pauseAfter = false, expectedHash) {
+  async beginApply(
+    s,
+    tree,
+    lastUpdated,
+    pauseAfter = false,
+    expectedHash,
+    incremental = false,
+  ) {
     tree = validateTree(tree);
     const base = (await this.store.get("base")) || [];
     const mapping = (await this.store.get("mapping")) || {};
@@ -144,7 +200,7 @@ export class Engine {
       throw Error(
         "서버를 읽는 동안 로컬 북마크가 변경되었습니다. 다음 검사에서 충돌을 확인합니다.",
       );
-    const plan = await this.native.plan(tree);
+    const plan = await this.native.plan(tree, incremental);
     // Commit the original data and complete target before issuing any native deletion.
     await this.backup(local.tree);
     s.apply = {
@@ -158,6 +214,7 @@ export class Engine {
       pauseAfter,
     };
     s.preview = false;
+    s.initialUpload = false;
     s.conflict = false;
     s.error = undefined;
     s.enabled = true;
@@ -166,7 +223,7 @@ export class Engine {
       target: tree,
       plan,
       orderPlan: undefined,
-      created: {},
+      created: plan.reused || {},
       pendingUpload: undefined,
     });
   }
@@ -238,9 +295,23 @@ export class Engine {
     }
     while (s.apply.cursor < plan.steps.length) {
       const step = plan.steps[s.apply.cursor];
+      if (plan.reused?.[step.node.id]) {
+        if (plan.updates[step.node.id])
+          await this.native.bookmarks.update(
+            plan.reused[step.node.id],
+            plan.updates[step.node.id],
+          );
+        s.apply.cursor++;
+        if (plan.updates[step.node.id] || Date.now() - start >= budget) {
+          await this.save(s);
+          if (Date.now() - start >= budget) return;
+        }
+        continue;
+      }
       const parent = rootMap[step.parent] || created[step.parent];
       if (!parent) throw Error("복원 부모 폴더를 찾을 수 없습니다.");
       const spec = this.native.createSpec(step, parent);
+      if (plan.incremental) spec.index = step.appendIndex;
       s.apply.intent = { spec, id: step.node.id };
       await this.save(s);
       const node = await this.native.bookmarks.create(spec);

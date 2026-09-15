@@ -262,12 +262,12 @@ export class Api {
     const result = await this.request(this.path());
     if (
       !result ||
-      typeof result.bookmarks !== "string" ||
+      (result.bookmarks != null && typeof result.bookmarks !== "string") ||
       typeof result.lastUpdated !== "string" ||
       !Number.isFinite(Date.parse(result.lastUpdated))
     )
       throw Error("서버 응답 형식이 올바르지 않습니다.");
-    return result;
+    return { ...result, bookmarks: result.bookmarks ?? "" };
   }
   async write(bookmarks, lastUpdated) {
     const result = await this.request(this.path(), { bookmarks, lastUpdated });
