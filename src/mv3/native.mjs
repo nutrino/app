@@ -193,8 +193,10 @@ export class Native {
     return {
       steps,
       rootMap,
+      // Removing the tail avoids repeatedly shifting every following sibling in Places.
+      clearFromEnd: true,
       clear: Object.values(roots).flatMap((root) =>
-        root.children.map((child) => child.id),
+        root.children.map((child) => child.id).reverse(),
       ),
     };
   }

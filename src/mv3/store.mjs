@@ -19,37 +19,26 @@ export class Store {
   async entries(prefix) {
     const db = await this.ready;
     return new Promise((resolve, reject) => {
-      const result = [];
-      const request = db
-        .transaction("data")
-        .objectStore("data")
-        .openCursor(IDBKeyRange.bound(prefix, prefix + "\uffff"));
-      request.onsuccess = () => {
-        const cursor = request.result;
-        if (!cursor) {
-          resolve(result);
-          return;
-        }
-        result.push([cursor.key, cursor.value]);
-        cursor.continue();
-      };
-      request.onerror = () => reject(request.error);
+      // Two bulk requests in one snapshot instead of one IPC roundtrip per row.
+      const tx = db.transaction("data");
+      const store = tx.objectStore("data");
+      const range = IDBKeyRange.bound(prefix, prefix + "\uffff");
+      const keys = store.getAllKeys(range);
+      const values = store.getAll(range);
+      tx.oncomplete = () =>
+        resolve(keys.result.map((key, i) => [key, values.result[i]]));
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () =>
+        reject(tx.error || Error("저장소 읽기가 중단됐습니다."));
     });
   }
   async deletePrefix(prefix) {
     const db = await this.ready;
     return new Promise((resolve, reject) => {
       const tx = db.transaction("data", "readwrite");
-      const request = tx
-        .objectStore("data")
-        .openCursor(IDBKeyRange.bound(prefix, prefix + "\uffff"));
-      request.onsuccess = () => {
-        const cursor = request.result;
-        if (cursor) {
-          cursor.delete();
-          cursor.continue();
-        }
-      };
+      tx.objectStore("data").delete(
+        IDBKeyRange.bound(prefix, prefix + "\uffff"),
+      );
       tx.oncomplete = resolve;
       tx.onerror = () => reject(tx.error);
       tx.onabort = () => reject(tx.error);

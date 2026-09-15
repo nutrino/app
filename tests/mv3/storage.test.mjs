@@ -23,3 +23,26 @@ test("IndexedDB failed transaction does not partially update checkpoint", async 
   await new Promise((resolve) => setTimeout(resolve, 10));
   assert.deepEqual(await store.get("state"), { cursor: 0 });
 });
+
+test("bulk journal reading/deletion preserves key pairing and unrelated data", async () => {
+  const store = new Store("test-" + crypto.randomUUID());
+  const rows = Object.fromEntries(
+    Array.from({ length: 1000 }, (_, i) => [
+      `created:active:${i}`,
+      `native-${i}`,
+    ]),
+  );
+  await store.put({
+    ...rows,
+    backup: { keep: true },
+    "created:other:0": "untouched",
+  });
+  assert.deepEqual(
+    Object.fromEntries(await store.entries("created:active:")),
+    rows,
+  );
+  await store.deletePrefix("created:active:");
+  assert.deepEqual(await store.entries("created:active:"), []);
+  assert.deepEqual(await store.get("backup"), { keep: true });
+  assert.equal(await store.get("created:other:0"), "untouched");
+});

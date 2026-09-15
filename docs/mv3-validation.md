@@ -5,7 +5,7 @@
 ## 확인한 결과
 
 - `npm ci --ignore-scripts`: 현재 의존성 집합 설치 성공.
-- `npm test`: 23개 자동 테스트 통과. 테스트 전에 두 브라우저용 번들을 생성한다.
+- `npm test`: 27개 자동 테스트 통과. 테스트 전에 두 브라우저용 번들을 생성한다.
 - `npm run lint`: 새 실행부의 문법 및 금지된 실행 API 검사 통과.
 - Firefox / Chromium 프로덕션 빌드와 ZIP 생성 성공.
 - `npm audit`: 알려진 취약점 0개. 이는 악성 코드 부재 또는 무결점 보증이 아니다.
@@ -115,3 +115,23 @@ Chrome에 한해 이 변환을 인식하면서 원래 동기화 URL을 보존하
 
 근거: [Chromium about URL 변환](https://chromium.googlesource.com/chromium/src/+/78.0.3904.87/chrome/browser/browser_about_handler.cc),
 [Chromium 제목 공백 처리](https://chromium.googlesource.com/chromium/src/+/f96feec0372f945f0430d91b9a93252b1de02855/components/bookmarks/browser/bookmark_node.cc).
+
+
+## Firefox 기존 북마크 정리 지연 수정
+
+Firefox의 `복원 중 (0/81459)` 보고를 확인했다. 새 항목을 생성하기 전에
+기존 시험 북마크 76,007개를 정리하는 중이었으나 화면은 생성 진행률만 표시했다.
+같은 폴더의 앞 항목부터 삭제하던 순서를 뒤에서부터 삭제하도록 바꾸고,
+8개씩 완료를 기다린 뒤 체크포인트를 저장하도록 개선했다. 중단된 이전 빌드의
+계획은 남은 ID만 재배열하며 원래 백업과 대상 데이터는 유지한다.
+삭제 도중 종료돼도 이미 사라진 ID를 건너뛰며 이어가는 회귀 시험을 추가했다.
+
+화면에 ‘기존 북마크 정리 중’의 실제 진행률을 표시한다. IndexedDB 복원 기록은
+getAllKeys/getAll 두 요청으로 읽고 완료 기록은 IDBKeyRange로 일괄 정리한다.
+한 행마다 이벤트가 발생하는 커서 방식의 반복 비용을 줄였다. 서로 다른 복원의
+기록 및 백업이 유지되는 것을 자동 시험으로 검증했다.
+
+현재 Firefox에 수정 빌드를 로드하여 정리가 다시 진행되는 것을 확인했다.
+Firefox 자체 북마크 Sync는 꺼져 있었다. 실제 81,462개 전체 복원 완료 검증은
+진행 중이며, 다른 북마크 확장의 임시 중지 여부는 사용자 답변을 기다린다.
+자동 테스트 27개, 문법 검사와 두 브라우저 패키지 생성은 통과했다.

@@ -34,7 +34,9 @@ export class Engine {
       error: s.error,
       lastUpdated: s.lastUpdated,
       phase: s.apply
-        ? "복원 중"
+        ? s.apply.phase === "clear"
+          ? "기존 북마크 정리 중"
+          : "복원 중"
         : s.conflict
           ? "충돌 확인 필요"
           : s.preview
@@ -45,7 +47,12 @@ export class Engine {
                 ? "동기화 사용 중"
                 : "일시 정지",
       progress: s.apply
-        ? { done: s.apply.cursor, total: s.apply.total }
+        ? s.apply.phase === "clear"
+          ? {
+              done: (s.apply.clearedBefore || 0) + s.apply.clearCursor,
+              total: s.apply.clearTotal || 1,
+            }
+          : { done: s.apply.cursor, total: s.apply.total }
         : undefined,
       count: s.count,
       conflict: !!s.conflict,
@@ -127,6 +134,7 @@ export class Engine {
     s.apply = {
       phase: "clear",
       clearCursor: 0,
+      clearTotal: plan.clear.length,
       cursor: 0,
       total: plan.steps.length,
       epoch: crypto.randomUUID(),
@@ -170,19 +178,40 @@ export class Engine {
         await this.save(s, { created });
       }
     }
+    // Upgrade an interrupted older restore without touching its original backup.
+    // Only the not-yet-acknowledged deletions are reordered; IDs remain unchanged.
+    if (s.apply.phase === "clear" && !plan.clearFromEnd) {
+      s.apply.clearTotal = plan.clear.length;
+      s.apply.clearedBefore = s.apply.clearCursor;
+      plan.clear = plan.clear.slice(s.apply.clearCursor).reverse();
+      plan.clearFromEnd = true;
+      s.apply.clearCursor = 0;
+      await this.save(s, { plan });
+    }
     while (
       s.apply.phase === "clear" &&
       s.apply.clearCursor < plan.clear.length
     ) {
-      const id = plan.clear[s.apply.clearCursor];
-      let exists = true;
-      try {
-        await this.native.bookmarks.get(id);
-      } catch {
-        exists = false;
-      }
-      if (exists) await this.native.bookmarks.removeTree(id);
-      s.apply.clearCursor++;
+      // Deletions are idempotent. Persist only after every member settles;
+      // interrupted batches safely retry already-missing IDs on the next wake.
+      const batch = plan.clear.slice(
+        s.apply.clearCursor,
+        s.apply.clearCursor + 8,
+      );
+      const results = await Promise.allSettled(
+        batch.map(async (id) => {
+          let exists = true;
+          try {
+            await this.native.bookmarks.get(id);
+          } catch {
+            exists = false;
+          }
+          if (exists) await this.native.bookmarks.removeTree(id);
+        }),
+      );
+      const failure = results.find((result) => result.status === "rejected");
+      if (failure) throw failure.reason;
+      s.apply.clearCursor += batch.length;
       await this.save(s);
       if (Date.now() - start >= budget) return;
     }

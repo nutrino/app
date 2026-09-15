@@ -584,3 +584,92 @@ test("Chrome about reader rewrite preserves original URL and permits checkpoint 
     false,
   );
 });
+
+test("large sibling cleanup deletes from tail and reports clearing progress", async () => {
+  const c = await setup(true);
+  for (let i = 0; i < 30; i++)
+    await c.bookmarks.create({
+      parentId: "toolbar_____",
+      title: `old ${i}`,
+      url: `https://example.com/${i}`,
+    });
+  const originalIds = c.bookmarks
+    .find("toolbar_____")
+    .children.map((n) => n.id);
+  await c.engine.startRestore();
+  const status = await c.engine.status();
+  assert.equal(status.phase, "기존 북마크 정리 중");
+  assert.deepEqual(status.progress, { done: 0, total: 30 });
+  const remove = c.bookmarks.removeTree.bind(c.bookmarks);
+  const removed = [];
+  c.bookmarks.removeTree = async (id) => {
+    removed.push(id);
+    await remove(id);
+  };
+  await c.engine.tick();
+  assert.deepEqual(removed, originalIds.reverse());
+  assert.equal((await c.engine.status()).error, undefined);
+});
+
+test("old interrupted clearing plan upgrades only remaining IDs and retains backup", async () => {
+  const c = await setup(true);
+  for (let i = 0; i < 8; i++)
+    await c.bookmarks.create({
+      parentId: "toolbar_____",
+      title: `old ${i}`,
+      url: `https://example.com/${i}`,
+    });
+  const ids = c.bookmarks.find("toolbar_____").children.map((n) => n.id);
+  await c.engine.startRestore();
+  const backup = await c.store.get("backup");
+  const plan = await c.store.get("plan");
+  plan.clear = [...ids];
+  delete plan.clearFromEnd;
+  const state = await c.store.get("state");
+  state.apply.clearCursor = 2;
+  await c.bookmarks.removeTree(ids[0]);
+  await c.bookmarks.removeTree(ids[1]);
+  // A delete may have completed just before the worker was stopped.
+  await c.bookmarks.removeTree(ids[2]);
+  await c.store.put({ plan, state });
+  const removed = [],
+    remove = c.bookmarks.removeTree.bind(c.bookmarks);
+  c.bookmarks.removeTree = async (id) => {
+    removed.push(id);
+    await remove(id);
+  };
+  await c.engine.tick();
+  assert.deepEqual(removed, ids.slice(3).reverse());
+  assert.deepEqual(await c.store.get("backup"), backup);
+  assert.equal((await c.engine.status()).applying, false);
+  assert.equal((await c.engine.status()).error, undefined);
+});
+
+test("interrupted deletion batch waits for siblings and replays missing IDs safely", async () => {
+  const c = await setup(true);
+  for (let i = 0; i < 16; i++)
+    await c.bookmarks.create({
+      parentId: "toolbar_____",
+      title: `old ${i}`,
+      url: `https://example.com/${i}`,
+    });
+  await c.engine.startRestore();
+  const original = c.bookmarks.removeTree.bind(c.bookmarks);
+  let fail = true;
+  c.bookmarks.removeTree = async (id) => {
+    await original(id);
+    if (fail) {
+      fail = false;
+      throw Error("terminated after delete");
+    }
+  };
+  await c.engine.tick();
+  assert.equal((await c.store.get("state")).apply.clearCursor, 0);
+  assert.equal(c.bookmarks.find("toolbar_____").children.length, 8);
+  assert.equal((await c.engine.status()).enabled, false);
+  await c.engine.pause(true);
+  await c.engine.tick();
+  assert.equal((await c.engine.status()).error, undefined);
+  assert.equal((await c.engine.status()).applying, false);
+  assert.equal((await c.store.get("backup")).bookmarks[0].children.length, 16);
+});
