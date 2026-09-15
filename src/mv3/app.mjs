@@ -28,6 +28,7 @@ async function refresh() {
   $("conflict").hidden = !state.conflict;
   $("progress").hidden = !state.progress;
   $("rollback").hidden = !state.applying;
+  $("diagnose").hidden = !state.applying;
   if (state.progress) {
     $("progress").max = state.progress.total || 1;
     $("progress").value = state.progress.done;
@@ -80,6 +81,11 @@ $("connect").addEventListener("submit", (event) => {
     });
   });
 });
+$("diagnose").onclick = () =>
+  action(async () => {
+    const report = await rpc("diagnose");
+    alert(report);
+  });
 $("rollback").onclick = () =>
   action(async () => {
     if (

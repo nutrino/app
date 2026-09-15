@@ -67,6 +67,7 @@
           ><button id="choose-server">서버 내용으로 로컬 교체</button
           ><button id="choose-local">로컬 내용으로 서버 교체</button>
         </div>
+        <button id="diagnose" hidden>복원 차이 확인</button>
         <button id="rollback" hidden>
           복원 중단 후 교체 전 백업으로 되돌리기
         </button>
@@ -100,8 +101,8 @@
         <ul id="results"></ul>
       </details>
       <footer>
-        자동 동기화: 약 1분 간격 · 북마크 변경 시 자동 실행<br />복원이 끝날 때까지
-        브라우저의 북마크를 편집하지 마세요.
+        자동 동기화: 약 1분 간격 · 북마크 변경 시 자동 실행<br />복원이 끝날
+        때까지 브라우저의 북마크를 편집하지 마세요.
       </footer>
     </main>
     <script src="app.js"></script>

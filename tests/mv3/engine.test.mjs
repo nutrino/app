@@ -472,3 +472,115 @@ test("default fetch preserves the browser global receiver", async () => {
     globalThis.fetch = original;
   }
 });
+
+test("Chromium title whitespace normalization preserves original and detects real edits", async () => {
+  const c = await setup(false);
+  const source = structuredClone(tree);
+  source[0].children[0].title = " Folder\r\n\t\u2028\u2029 ";
+  source[0].children[0].children[0].title = "A\nB\tC";
+  c.server.bookmarks = await encrypt(source, key);
+  const create = c.bookmarks.create.bind(c.bookmarks);
+  c.bookmarks.create = (spec) =>
+    create({
+      ...spec,
+      title: spec.title.replace(/[\n\r\t\u2028\u2029]/g, " "),
+    });
+  await restore(c);
+  assert.deepEqual(await c.store.get("base"), source);
+  await c.engine.tick();
+  assert.equal(c.writes(), 0);
+  const mapping = await c.store.get("mapping");
+  const nativeId = Object.keys(mapping).find((k) => mapping[k] === 4);
+  c.bookmarks.find(nativeId).title = "Changed title";
+  await c.engine.tick();
+  assert.equal(
+    (await decrypt(c.server.bookmarks, key))[0].children[0].children[0].title,
+    "Changed title",
+  );
+  assert.equal(
+    c.native.matches(
+      { title: "A B C", url: "https://example.com/" },
+      { title: "A\nB\tC", url: "https://example.com/" },
+    ),
+    true,
+  );
+  assert.equal(
+    c.native.matches(
+      { title: "Changed", url: "https://example.com/" },
+      { title: "A\nB\tC", url: "https://example.com/" },
+    ),
+    false,
+  );
+});
+
+test("restore diagnostics are read-only and retain mismatch checks", async () => {
+  const c = await setup(false);
+  const create = c.bookmarks.create.bind(c.bookmarks);
+  c.bookmarks.create = (spec) =>
+    create({
+      ...spec,
+      title: spec.title === "Example" ? "External edit" : spec.title,
+    });
+  await c.engine.startRestore();
+  await c.engine.tick();
+  assert.equal((await c.engine.status()).enabled, false);
+  assert.match((await c.engine.status()).error, /title 1개/);
+  const saved = await c.store.get("state");
+  const report = await c.engine.diagnoseRestore();
+  assert.match(report, /ID 4: title/);
+  assert.equal(report.includes("External edit"), false);
+  assert.equal(report.includes("https:"), false);
+  assert.deepEqual(await c.store.get("state"), saved);
+  assert.equal(c.writes(), 0);
+});
+
+test("Chrome about reader rewrite preserves original URL and permits checkpoint recovery", async () => {
+  const c = await setup(false);
+  const source = structuredClone(tree);
+  const original = "about:reader?url=https%3A%2F%2Fexample.org%2Farticle";
+  const rewritten = "chrome://reader/?url=https%3A%2F%2Fexample.org%2Farticle";
+  source[0].children[0].children[0].url = original;
+  c.server.bookmarks = await encrypt(source, key);
+  const create = c.bookmarks.create.bind(c.bookmarks);
+  c.bookmarks.create = (spec) =>
+    create({ ...spec, url: spec.url === original ? rewritten : spec.url });
+  await restore(c);
+  assert.deepEqual(await c.store.get("base"), source);
+  await c.engine.tick();
+  assert.equal(c.writes(), 0);
+  assert.equal(
+    c.native.matches(
+      { title: "X", url: rewritten },
+      { title: "X", url: original },
+    ),
+    true,
+  );
+  assert.equal(
+    c.native.matches(
+      { title: "X", url: rewritten + "changed" },
+      { title: "X", url: original },
+    ),
+    false,
+  );
+  assert.equal(
+    new Native(c.bookmarks, true).matches(
+      { title: "X", url: rewritten },
+      { title: "X", url: original },
+    ),
+    false,
+  );
+  assert.equal(
+    c.native.matches(
+      { title: "X", url: "chrome://blank/" },
+      { title: "X", url: "about:blank" },
+    ),
+    false,
+  );
+  assert.equal(
+    c.native.matches(
+      { title: "X", url: "chrome://srcdoc/" },
+      { title: "X", url: "about:srcdoc" },
+    ),
+    false,
+  );
+});

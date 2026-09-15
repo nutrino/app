@@ -1,13 +1,29 @@
 import { ROOTS, SEPARATOR, validateTree } from "./protocol.mjs";
-function sameURL(a, b) {
+function chromeAboutURL(url) {
+  if (
+    url.protocol !== "about:" ||
+    !/^[a-z0-9-]+$/i.test(url.pathname) ||
+    ["blank", "srcdoc"].includes(url.pathname.toLowerCase())
+  )
+    return url.href;
+  return `chrome://${url.pathname.toLowerCase()}/${url.search}${url.hash}`;
+}
+function sameURL(a, b, chromium = false) {
   if (a === b) return true;
   if (a === undefined || b === undefined) return false;
   try {
-    return new URL(a).href === new URL(b).href;
+    const actual = new URL(a),
+      original = new URL(b);
+    return (
+      actual.href === original.href ||
+      (chromium && actual.href === chromeAboutURL(original))
+    );
   } catch {
     return false;
   }
 }
+// Chromium BookmarkNode::SetTitle replaces these characters without trimming.
+const chromeTitle = (title) => title.replace(/[\n\r\t\u2028\u2029]/g, " ");
 export class Native {
   constructor(bookmarks, firefox) {
     this.bookmarks = bookmarks;
@@ -66,7 +82,17 @@ export class Native {
       used.add(id);
       outputMap[n.id] = id;
       const old = metadata.get(id);
-      const out = { id, title: rootTitle || n.title || "" };
+      const title = n.title || "";
+      const out = {
+        id,
+        title:
+          rootTitle ||
+          (!this.firefox &&
+          typeof old?.title === "string" &&
+          title === chromeTitle(old.title)
+            ? old.title
+            : title),
+      };
       if (old?.description !== undefined) out.description = old.description;
       if (old?.tags !== undefined) out.tags = [...old.tags];
       if (
@@ -77,7 +103,7 @@ export class Native {
       )
         out.url = SEPARATOR;
       else if (n.url !== undefined)
-        out.url = sameURL(n.url, old?.url) ? old.url : n.url;
+        out.url = sameURL(n.url, old?.url, !this.firefox) ? old.url : n.url;
       else out.children = (n.children || []).map((child) => convert(child));
       return out;
     };
@@ -190,8 +216,9 @@ export class Native {
     if (!native) return false;
     if (spec.type === "separator") return native.type === "separator";
     return (
-      native.title === spec.title &&
-      sameURL(native.url, spec.url) &&
+      (native.title === spec.title ||
+        (!this.firefox && native.title === chromeTitle(spec.title))) &&
+      sameURL(native.url, spec.url, !this.firefox) &&
       (spec.url !== undefined || native.url === undefined)
     );
   }

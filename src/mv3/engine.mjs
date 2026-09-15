@@ -1,3 +1,4 @@
+import { restoreDifferences } from "./restore-differences.mjs";
 import {
   Api,
   countTree,
@@ -220,7 +221,9 @@ export class Engine {
     const local = await this.native.snapshot(tree, mapping);
     if ((await hash(local.tree)) !== (await hash(tree)))
       throw Error(
-        "복원 결과가 대상 데이터와 다릅니다. 외부 편집 또는 지원하지 않는 URL을 확인하세요. 자동 동기화를 중단했습니다.",
+        "복원 결과가 대상 데이터와 다릅니다. " +
+          restoreDifferences(tree, local.tree) +
+          " 자동 동기화를 중단했습니다.",
       );
     const epoch = s.apply.epoch;
     s.baseHash = s.apply.pauseAfter ? s.baseHash : await hash(local.tree);
@@ -239,6 +242,25 @@ export class Engine {
       preview: undefined,
     });
     await this.store.deletePrefix?.(`created:${epoch}:`);
+  }
+  async diagnoseRestore() {
+    return this.exclusive(async () => {
+      const s = await this.state();
+      if (!s.apply) throw Error("진행 중인 복원이 없습니다.");
+      const plan = await this.store.get("plan");
+      const created = (await this.store.get("created")) || {};
+      const entries = await this.store.entries(`created:${s.apply.epoch}:`);
+      for (const [key, value] of entries)
+        created[key.split(":").at(-1)] = value;
+      const mapping = Object.fromEntries(
+        Object.entries({ ...plan.rootMap, ...created }).map(
+          ([sync, native]) => [native, Number(sync)],
+        ),
+      );
+      const target = await this.store.get("target");
+      const local = await this.native.snapshot(target, mapping);
+      return restoreDifferences(target, local.tree);
+    });
   }
   async hydrateCreated(s) {
     if (!s.apply || !this.store.entries) return;

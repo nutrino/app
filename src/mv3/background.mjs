@@ -57,6 +57,8 @@ browser.runtime.onMessage.addListener((message, sender) => {
     return undefined;
   const dispatch = async () => {
     switch (message?.type) {
+      case "diagnose":
+        return engine.diagnoseRestore();
       case "status":
         return engine.status();
       case "connect":
@@ -84,7 +86,8 @@ browser.runtime.onMessage.addListener((message, sender) => {
   };
   return dispatch().then(
     (data) => {
-      if (message.type !== "status" && message.type !== "export") schedule(50);
+      if (!["status", "export", "diagnose"].includes(message.type))
+        schedule(50);
       return { ok: true, data };
     },
     (error) => ({ ok: false, error: error.message }),
