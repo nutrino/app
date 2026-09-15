@@ -10,7 +10,17 @@ const engine = new Engine(
   ),
 );
 let timer;
-async function run() {
+let running;
+function run() {
+  // Alarms and bookmark events may arrive during a long restore chunk.
+  // Share the active run instead of queuing more chunks ahead of pause/rollback.
+  if (!running)
+    running = runOnce().finally(() => {
+      running = undefined;
+    });
+  return running;
+}
+async function runOnce() {
   await engine.tick();
   const status = await engine.status();
   await browser.action.setBadgeText({

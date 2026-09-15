@@ -98,13 +98,14 @@ for (const platform of ["firefox", "chromium"])
       vm.runInNewContext(source, context, { timeout: 3000 });
       assert.equal(typeof message, "function");
       assert.ok(listeners.length >= 8);
-      const rpc = (type) =>
+      const rpc = (type, data = {}) =>
         message(
-          { type },
+          { type, ...data },
           { id: "test", url: "test-extension://test/app.html" },
         );
       rpc.alarm = () => alarm({ name: "xbs-mv3-sync" });
       rpc.timers = timers;
+      rpc.api = api;
       return rpc;
     }
     const first = await boot()("status");
@@ -137,4 +138,29 @@ for (const platform of ["firefox", "chromium"])
         "paused or failed pending uploads must not spin a fast retry timer",
       );
     }
+    let release, started;
+    const gate = new Promise((resolve) => {
+      release = resolve;
+    });
+    const entered = new Promise((resolve) => {
+      started = resolve;
+    });
+    let calls = 0;
+    rpc.api.bookmarks.getTree = async () => {
+      calls++;
+      started();
+      await gate;
+      throw Error("test delayed native operation");
+    };
+    const runs = Array.from({ length: 50 }, () => rpc.alarm());
+    await entered;
+    const paused = rpc("pause", { enabled: false });
+    release();
+    await Promise.all([...runs, paused]);
+    assert.equal(
+      calls,
+      1,
+      "overlapping alarms must share one run, not queue restore chunks",
+    );
+    assert.equal((await rpc("status")).data.enabled, false);
   });
