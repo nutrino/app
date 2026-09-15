@@ -17,33 +17,45 @@
     </header>
     <main>
       <p id="notice" role="status" aria-live="polite">실행부에 연결 중…</p>
-      <section id="login">
-        <form id="connect">
+      <section id="login" hidden>
+        <form id="connect" autocomplete="off">
           <label
             >서버 주소<input
               id="url"
               type="url"
               required
               placeholder="https://your-sync-server"
-              autocomplete="url" /></label
-          ><label
-            >동기화 ID<input
-              id="sync-id"
-              required
+              name="xbs-server-address"
               autocomplete="off"
-              spellcheck="false" /></label
-          ><label
-            >비밀번호<input
-              id="password"
-              type="password"
-              required
-              autocomplete="off"
+              spellcheck="false"
           /></label>
-          <p class="hint">
-            비밀번호는 이 기기에서 암호화 키를 만들 때만 사용합니다. 암호화된
-            북마크와 동기화 ID를 지정한 서버로 전송합니다.
-          </p>
-          <button type="submit">연결 및 서버 데이터 확인</button>
+          <div id="server-permission">
+            <p>먼저 서버 주소를 입력하고 연결 권한을 허용해 주세요.</p>
+            <button id="grant-server" type="button">서버 연결 권한 허용</button>
+          </div>
+          <fieldset id="credentials" hidden disabled>
+            <label
+              >동기화 ID<input
+                id="sync-id"
+                name="xbs-sync-id"
+                required
+                autocomplete="off"
+                spellcheck="false" /></label
+            ><label
+              >비밀번호<input
+                id="password"
+                name="xbs-sync-password"
+                type="password"
+                required
+                autocomplete="off"
+            /></label>
+            <p class="hint">
+              비밀번호는 이 기기에서 암호화 키를 만들 때만 사용합니다. 암호화된
+              북마크와 동기화 ID를 지정한 서버로 전송합니다. 주소와 ID는 자동
+              저장하며, 비밀번호는 브라우저를 종료할 때까지 기억합니다.
+            </p>
+            <button type="submit">연결 및 서버 데이터 확인</button>
+          </fieldset>
         </form>
       </section>
       <section id="account" hidden>

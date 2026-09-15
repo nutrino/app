@@ -39,6 +39,12 @@ main {
 section {
   margin: 16px 0;
 }
+fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
 label {
   display: block;
   margin: 12px 0;

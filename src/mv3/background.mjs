@@ -104,6 +104,12 @@ browser.runtime.onMessage.addListener((message, sender) => {
   );
 });
 browser.runtime.onStartup.addListener(() => schedule(0));
-browser.runtime.onInstalled.addListener(() => schedule(0));
+browser.runtime.onInstalled.addListener((details) => {
+  schedule(0);
+  if (details.reason === "install")
+    browser.tabs
+      .create({ url: browser.runtime.getURL("app.html") })
+      .catch(() => {});
+});
 browser.alarms.create("xbs-mv3-sync", { periodInMinutes: 1 });
 schedule(0);
