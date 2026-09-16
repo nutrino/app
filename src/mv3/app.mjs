@@ -79,6 +79,7 @@ async function refresh() {
   $("progress").hidden = !state.progress;
   $("rollback").hidden = !state.applying;
   $("diagnose").hidden = !state.applying;
+  $("diagnose-urls").hidden = !state.applying;
   if (state.progress) {
     $("progress").max = state.progress.total || 1;
     $("progress").value = state.progress.done;
@@ -131,6 +132,10 @@ $("diagnose").onclick = () =>
   action(async () => {
     const report = await rpc("diagnose");
     alert(report);
+  });
+$("diagnose-urls").onclick = () =>
+  action(async () => {
+    alert(await rpc("diagnose", { details: true }));
   });
 $("rollback").onclick = () =>
   action(async () => {

@@ -1260,3 +1260,31 @@ test("initial two-way with an empty server preserves and uploads local bookmarks
   assert.equal((await decrypt(c.server.bookmarks, key))[0].children.length, 1);
   assert.equal(c.writes(), 1);
 });
+
+test("explicit URL diagnostic identifies a changed bookmark without altering the paused restore", async () => {
+  const c = await setup(false);
+  const create = c.bookmarks.create.bind(c.bookmarks);
+  c.bookmarks.create = (spec) =>
+    create({
+      ...spec,
+      ...(spec.title === "Example"
+        ? { url: "https://changed.example/?private=value" }
+        : {}),
+    });
+  await c.engine.startRestore();
+  await c.engine.tick();
+  assert.equal((await c.engine.status()).enabled, false);
+  const before = await c.engine.state();
+  const nativeBefore = await c.bookmarks.getTree();
+  const summary = await c.engine.diagnoseRestore();
+  assert.match(summary, /url 1개/);
+  assert.equal(summary.includes("private=value"), false);
+  const details = await c.engine.diagnoseRestore(true);
+  assert.match(details, /"syncId": 4/);
+  assert.match(details, /"nativeId": "/);
+  assert.match(details, /https:\/\/changed.example\/\?private=value/);
+  assert.match(details, /"expectedURL":/);
+  assert.deepEqual(await c.engine.state(), before);
+  assert.deepEqual(await c.bookmarks.getTree(), nativeBefore);
+  assert.equal(c.writes(), 0);
+});

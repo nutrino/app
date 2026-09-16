@@ -450,7 +450,7 @@ export class Engine {
     });
     await this.store.deletePrefix?.(`created:${epoch}:`);
   }
-  async diagnoseRestore() {
+  async diagnoseRestore(details = false) {
     return this.exclusive(async () => {
       const s = await this.state();
       if (!s.apply) throw Error("진행 중인 복원이 없습니다.");
@@ -466,7 +466,38 @@ export class Engine {
       );
       const target = await this.store.get("target");
       const local = await this.native.snapshot(target, mapping);
-      return restoreDifferences(target, local.tree);
+      const summary = restoreDifferences(target, local.tree);
+      if (!details) return summary;
+      const flatten = (nodes, map = new Map()) => {
+        for (const node of nodes) {
+          map.set(node.id, node);
+          if (node.children) flatten(node.children, map);
+        }
+        return map;
+      };
+      const expected = flatten(target),
+        actual = flatten(local.tree);
+      const nativeIds = new Map(
+        Object.entries(mapping).map(([native, sync]) => [sync, native]),
+      );
+      const differences = [];
+      for (const [id, node] of expected) {
+        const found = actual.get(id);
+        if (found && node.url !== found.url) {
+          differences.push({
+            syncId: id,
+            nativeId: nativeIds.get(id),
+            expectedURL: node.url ?? null,
+            actualURL: found.url ?? null,
+          });
+          if (differences.length === 20) break;
+        }
+      }
+      return (
+        summary +
+        "\n\nURL 차이 상세 (최대 20개):\n" +
+        JSON.stringify(differences, null, 2)
+      );
     });
   }
   async hydrateCreated(s) {

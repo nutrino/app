@@ -69,7 +69,7 @@ browser.runtime.onMessage.addListener((message, sender) => {
   const dispatch = async () => {
     switch (message?.type) {
       case "diagnose":
-        return engine.diagnoseRestore();
+        return engine.diagnoseRestore(message.details === true);
       case "status":
         return { ...(await engine.status()), build: BUILD_INFO };
       case "mode":
