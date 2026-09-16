@@ -2,7 +2,9 @@ import browser from "webextension-polyfill";
 import { MAX_BYTES } from "./protocol.mjs";
 import { ConnectionForm, needsSetupTab } from "./connection-form.mjs";
 import { BUILD_INFO, describeBuild, sameBuild } from "./build-info.mjs";
+import { FolderPicker } from "./folder-picker.mjs";
 const $ = (id) => document.getElementById(id);
+const folderPicker = new FolderPicker(browser, rpc, $);
 let state;
 let busy = false;
 let errorUntil = 0;
@@ -49,7 +51,9 @@ async function refresh() {
   $("restore-state").textContent = state.restoreState
     ? `복원 단계: ${state.restoreState.phase} · ${state.enabled ? "실행 중" : "정지"} · 생성 ${state.restoreState.cursor}/${state.restoreState.total} · 순서 조정 ${state.restoreState.passes}회 / 이동 ${state.restoreState.moves}회`
     : "진행 중인 복원 없음";
-  $("login").hidden = state.connected;
+  const setupPopup = needsSetupTab(state.connected, location.search);
+  $("login").hidden = state.connected || setupPopup;
+  $("open-setup").hidden = !setupPopup;
   $("account").hidden = !state.connected;
   $("server").textContent = state.url || "";
   $("summary").textContent =
@@ -197,6 +201,8 @@ $("choose-server").onclick = () =>
   action(() => rpc("resolve", { choice: "server" }));
 $("choose-local").onclick = () =>
   action(() => rpc("resolve", { choice: "local" }));
+$("open-setup").onclick = () =>
+  browser.tabs.create({ url: browser.runtime.getURL("app.html") });
 $("full").onclick = () =>
   browser.tabs.create({ url: browser.runtime.getURL("app.html") });
 for (const button of document.querySelectorAll("[data-export]"))
@@ -229,6 +235,7 @@ $("import").onchange = () =>
   });
 function updateControls() {
   if (!state) return;
+  folderPicker.update(state, busy);
   $("disconnect").disabled = busy || state.applying || state.pending;
   $("sync").disabled = busy || state.preview || state.conflict;
   $("sync-mode").disabled = busy || state.applying || state.pending;
@@ -356,15 +363,11 @@ $("search").oninput = () => {
 };
 async function initialize() {
   const status = await rpc("status");
-  if (needsSetupTab(status.connected, location.search)) {
-    await browser.tabs.create({ url: browser.runtime.getURL("app.html") });
-    window.close();
-    return;
-  }
   await connection.load(status);
   connection.bind();
   await refresh();
   ready = true;
+  folderPicker.load();
 }
 initialize().catch((error) => notice(error.message, true));
 setInterval(() => {

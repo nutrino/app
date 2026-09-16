@@ -175,3 +175,36 @@ a {
     color: #90caff;
   }
 }
+
+#quick-bookmark {
+  margin-top: 0;
+}
+#bookmark-page {
+  overflow-wrap: anywhere;
+  max-height: 3.1em;
+  overflow-y: auto;
+}
+#folder-results {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0;
+  max-height: 250px;
+  overflow-y: auto;
+}
+#folder-results li {
+  margin: 0;
+}
+#folder-results button {
+  width: 100%;
+  text-align: left;
+  margin: 2px 0;
+  overflow-wrap: anywhere;
+}
+#folder-warning {
+  color: #9a2614;
+}
+@media (prefers-color-scheme: dark) {
+  #folder-warning {
+    color: #ffb4a4;
+  }
+}

@@ -16,6 +16,29 @@
       <button id="full" title="전체 화면으로 열기">↗</button>
     </header>
     <main>
+      <section id="quick-bookmark" aria-label="현재 페이지를 로컬 폴더에 저장">
+        <label for="folder-query">현재 페이지 북마크 추가</label>
+        <p id="bookmark-page" class="hint"></p>
+        <input
+          id="folder-query"
+          type="search"
+          placeholder="저장할 폴더 검색…"
+          autocomplete="off"
+          aria-controls="folder-results"
+        />
+        <p id="folder-count" class="hint" role="status"></p>
+        <p id="folder-warning" class="hint" hidden></p>
+        <ul id="folder-results" aria-label="로컬 북마크 폴더 검색 결과"></ul>
+        <button id="folder-more" hidden>다음 50개 더 보기</button>
+        <button id="folder-reload" class="secondary">폴더 새로 읽기</button>
+        <p
+          id="folder-feedback"
+          class="hint"
+          role="status"
+          aria-live="polite"
+        ></p>
+      </section>
+      <button id="open-setup" hidden>서버 연결 설정 열기</button>
       <p id="notice" role="status" aria-live="polite">실행부에 연결 중…</p>
       <section id="build-info" aria-label="설치된 빌드 정보">
         <p id="ui-build"></p>

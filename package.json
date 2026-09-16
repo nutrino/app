@@ -12,7 +12,7 @@
     "url": "https://github.com/xbrowsersync/app/issues"
   },
   "scripts": {
-    "test": "node --test tests/mv3/bundle.test.mjs tests/mv3/engine.test.mjs tests/mv3/storage.test.mjs tests/mv3/connection-form.test.mjs tests/mv3/server-library.test.mjs",
+    "test": "node --test tests/mv3/bundle.test.mjs tests/mv3/engine.test.mjs tests/mv3/storage.test.mjs tests/mv3/connection-form.test.mjs tests/mv3/server-library.test.mjs tests/mv3/folder-picker.test.mjs",
     "lint": "node scripts/check-mv3.js",
     "build:firefox": "node scripts/build-mv3.js firefox",
     "build:firefox:dev": "node scripts/build-mv3.js firefox --dev",

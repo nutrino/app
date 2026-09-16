@@ -27,6 +27,7 @@ for (const platform of ["firefox", "chromium"])
       "storage",
       "alarms",
       "unlimitedStorage",
+      "activeTab",
     ]);
     assert.ok(
       platform === "firefox"
@@ -212,6 +213,7 @@ for (const platform of ["firefox", "chromium"])
       dataset: {},
       classList: { toggle() {} },
       addEventListener() {},
+      focus() {},
       replaceChildren() {
         this.children = [];
       },
@@ -243,6 +245,16 @@ for (const platform of ["firefox", "chromium"])
         async sendMessage(message) {
           messages.push(message);
           if (message.type === "mode") state.mode = message.mode;
+          if (message.type === "local-folders")
+            return {
+              ok: true,
+              data: [
+                { id: "10", title: "Work", path: "Toolbar / Work" },
+                { id: "11", title: "Travel", path: "Toolbar / Travel" },
+              ],
+            };
+          if (message.type === "add-bookmark")
+            return { ok: true, data: { id: "12", existing: false } };
           if (message.type === "server-list") {
             const folders = message.options.view === "folders";
             const child = message.options.parent === 3;
@@ -271,6 +283,11 @@ for (const platform of ["firefox", "chromium"])
           return { ok: true, data: { ...state } };
         },
       },
+      tabs: {
+        query: async () => [
+          { id: 7, title: "Current page", url: "https://example.org/current" },
+        ],
+      },
       storage: { local: storage, session: storage },
       permissions: { contains: async () => true },
     };
@@ -296,6 +313,16 @@ for (const platform of ["firefox", "chromium"])
     const flush = () => new Promise((resolve) => setImmediate(resolve));
     await flush();
     assert.equal(get("sync-mode").value, "download");
+    assert.equal(get("bookmark-page").textContent, "Current page");
+    get("folder-query").value = "work";
+    get("folder-query").oninput();
+    assert.equal(get("folder-results").children.length, 1);
+    await get("folder-results").children[0].children[0].onclick();
+    const added = messages.find((m) => m.type === "add-bookmark");
+    assert.equal(added.data.parentId, "10");
+    assert.equal(added.data.url, "https://example.org/current");
+    assert.match(get("folder-feedback").textContent, /저장했습니다/);
+
     get("sync-mode").value = "both";
     get("sync-mode").onchange();
     await get("save-mode").onclick();

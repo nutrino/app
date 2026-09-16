@@ -13,6 +13,7 @@ import {
   validateTree,
 } from "./protocol.mjs";
 import { mergeInitial, serverPage } from "./server-library.mjs";
+import { localFolders, bookmarkBlock } from "./folder-picker.mjs";
 const MODES = ["download", "upload", "both"];
 const readTree = (remote, key) =>
   remote.bookmarks === "" ? validateTree([]) : decrypt(remote.bookmarks, key);
@@ -511,6 +512,43 @@ export class Engine {
     await this.store.put({
       previousServerBackup: await this.store.get("serverBackup"),
       serverBackup: tree,
+    });
+  }
+  listLocalFolders() {
+    return this.exclusive(async () =>
+      localFolders(await this.native.bookmarks.getTree()),
+    );
+  }
+  addBookmark({ parentId, url, title } = {}) {
+    return this.exclusive(async () => {
+      const blocked = bookmarkBlock(await this.state());
+      if (blocked) throw Error(blocked);
+      if (
+        typeof parentId !== "string" ||
+        typeof url !== "string" ||
+        typeof title !== "string"
+      )
+        throw Error("저장할 페이지 또는 폴더가 올바르지 않습니다.");
+      const parsed = new URL(url);
+      if (
+        [
+          "javascript:",
+          "data:",
+          "moz-extension:",
+          "chrome-extension:",
+        ].includes(parsed.protocol)
+      )
+        throw Error("이 페이지 주소는 빠른 북마크 추가를 지원하지 않습니다.");
+      const folders = localFolders(await this.native.bookmarks.getTree());
+      if (!folders.some((folder) => folder.id === parentId))
+        throw Error(
+          "저장할 폴더가 없거나 읽기 전용입니다. 폴더를 새로 읽어 주세요.",
+        );
+      const children = await this.native.bookmarks.getChildren(parentId);
+      const existing = children.find((node) => node.url === url);
+      if (existing) return { id: existing.id, existing: true };
+      const node = await this.native.bookmarks.create({ parentId, title, url });
+      return { id: node.id, existing: false };
     });
   }
   setMode(mode) {

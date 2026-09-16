@@ -68,6 +68,10 @@ browser.runtime.onMessage.addListener((message, sender) => {
     return undefined;
   const dispatch = async () => {
     switch (message?.type) {
+      case "local-folders":
+        return engine.listLocalFolders();
+      case "add-bookmark":
+        return engine.addBookmark(message.data);
       case "diagnose":
         return engine.diagnoseRestore(message.details === true);
       case "status":
@@ -102,7 +106,13 @@ browser.runtime.onMessage.addListener((message, sender) => {
   return dispatch().then(
     (data) => {
       if (
-        !["status", "export", "diagnose", "server-list"].includes(message.type)
+        ![
+          "status",
+          "export",
+          "diagnose",
+          "server-list",
+          "local-folders",
+        ].includes(message.type)
       )
         schedule(50);
       return { ok: true, data };

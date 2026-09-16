@@ -1362,3 +1362,43 @@ test("Edge paused reader URL/order mismatch resumes without recreating bookmarks
   await c.engine.tick();
   assert.equal(c.writes(), 0);
 });
+
+for (const firefox of [true, false])
+  test(`${firefox ? "Firefox" : "Chromium"} quick bookmark validates local folders and avoids duplicates`, async () => {
+    const c = await setup(firefox);
+    const parentId = firefox ? "toolbar_____" : "1";
+    const bookmark = {
+      parentId,
+      title: "Current page",
+      url: "https://current.example/",
+    };
+    const folders = await c.engine.listLocalFolders();
+    assert.ok(folders.some((f) => f.id === parentId));
+    const first = await c.engine.addBookmark(bookmark);
+    assert.equal(first.existing, false);
+    assert.deepEqual(await c.engine.addBookmark(bookmark), {
+      id: first.id,
+      existing: true,
+    });
+    assert.equal(c.bookmarks.find(parentId).children.length, 1);
+    await assert.rejects(
+      c.engine.addBookmark({ ...bookmark, parentId: first.id }),
+      /フォルダ|폴더/,
+    );
+    await assert.rejects(
+      c.engine.addBookmark({ ...bookmark, url: "javascript:alert(1)" }),
+      /지원하지/,
+    );
+    assert.equal(c.writes(), 0);
+    const s = await c.engine.state();
+    s.mode = "download";
+    s.enabled = true;
+    s.preview = false;
+    await c.store.put({ state: s });
+    await assert.rejects(c.engine.addBookmark(bookmark), /서버 → 로컬/);
+    s.apply = { phase: "create" };
+    s.enabled = false;
+    await c.store.put({ state: s });
+    await assert.rejects(c.engine.addBookmark(bookmark), /복원 중/);
+    assert.equal(c.bookmarks.find(parentId).children.length, 1);
+  });
