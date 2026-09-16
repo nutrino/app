@@ -52,7 +52,7 @@ test("folder index searches full paths, keeps duplicate names and excludes unmod
     ["3"],
   );
   assert.equal(searchFolders(folders, "nonexistent").length, 0);
-  assert.equal(searchFolders(folders, " ").length, folders.length);
+  assert.equal(searchFolders(folders, " ").length, 0);
 });
 test("quick add blocks restore and active server-authoritative sync but permits paused/local workflows", () => {
   assert.match(bookmarkBlock({ applying: true }), /복원 중/);

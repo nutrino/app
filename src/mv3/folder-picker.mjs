@@ -30,6 +30,7 @@ export function searchFolders(folders, query) {
     .trim()
     .split(/\s+/)
     .filter(Boolean);
+  if (!words.length) return [];
   return folders.filter((folder) => {
     const path = folder.path.normalize("NFKC").toLocaleLowerCase();
     return words.every((word) => path.includes(word));
@@ -87,9 +88,30 @@ export class FolderPicker {
     this.folders = [];
     this.recent = [];
     this.limit = 50;
-    get("folder-query").oninput = () => {
+    this.query = "";
+    const input = get("folder-query");
+    const scheduleSearch = (event = {}) => {
+      clearTimeout(this.searchTimer);
+      this.query = "";
       this.limit = 50;
+      const query = input.value.trim();
+      this.waiting = !!query;
       this.render();
+      if (!query || this.composing || event.isComposing) return;
+      this.searchTimer = setTimeout(() => {
+        this.waiting = false;
+        this.query = query;
+        this.render();
+      }, 1000);
+    };
+    input.oninput = scheduleSearch;
+    input.oncompositionstart = () => {
+      this.composing = true;
+      scheduleSearch();
+    };
+    input.oncompositionend = () => {
+      this.composing = false;
+      scheduleSearch();
     };
     get("folder-more").onclick = () => {
       this.limit += 50;
@@ -150,9 +172,12 @@ export class FolderPicker {
     );
   }
   render() {
-    const matches = searchFolders(this.folders, this.get("folder-query").value);
-    this.get("folder-count").textContent =
-      `${matches.length}개 폴더 검색됨 · ${Math.min(matches.length, this.limit)}개 표시`;
+    const matches = this.query ? searchFolders(this.folders, this.query) : [];
+    this.get("folder-count").textContent = this.waiting
+      ? "입력을 멈추면 1초 후 검색합니다."
+      : !this.query
+        ? "폴더 검색어를 입력하세요."
+        : `${matches.length}개 폴더 검색됨 · ${Math.min(matches.length, this.limit)}개 표시`;
     this.get("folder-more").hidden = matches.length <= this.limit;
     this.get("folder-results").replaceChildren();
     this.buttons = [];
@@ -176,10 +201,7 @@ export class FolderPicker {
           separator.textContent = " » ";
           button.append(separator);
         }
-        for (const part of highlightedParts(
-          segment,
-          this.get("folder-query").value,
-        )) {
+        for (const part of highlightedParts(segment, this.query)) {
           const text = document.createElement(part.match ? "mark" : "span");
           text.textContent = part.text;
           button.append(text);

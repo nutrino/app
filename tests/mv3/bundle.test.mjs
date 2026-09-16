@@ -200,7 +200,8 @@ for (const platform of ["firefox", "chromium"])
   });
 
 for (const platform of ["firefox", "chromium"])
-  test(`${platform} app bundle routes direction selection and server folder navigation`, async () => {
+  test(`${platform} app bundle routes direction selection and server folder navigation`, async (t) => {
+    t.mock.timers.enable({ apis: ["setTimeout"] });
     const directory = `build/mv3/${platform}`;
     const html = fs.readFileSync(`${directory}/app.html`, "utf8");
     const build = JSON.parse(
@@ -340,8 +341,17 @@ for (const platform of ["firefox", "chromium"])
     await flush();
     assert.equal(get("sync-mode").value, "download");
     assert.equal(get("bookmark-page").textContent, "Current page");
+    assert.equal(get("folder-results").children.length, 0);
+    assert.equal(get("recent-folders").children.length, 1);
+    get("folder-query").value = "wo";
+    get("folder-query").oninput();
+    t.mock.timers.tick(999);
+    assert.equal(get("folder-results").children.length, 0);
     get("folder-query").value = "work";
     get("folder-query").oninput();
+    t.mock.timers.tick(999);
+    assert.equal(get("folder-results").children.length, 0);
+    t.mock.timers.tick(1);
     assert.equal(get("folder-results").children.length, 1);
     await get("folder-results").children[0].children[0].onclick();
     const added = messages.find((m) => m.type === "add-bookmark");
@@ -358,6 +368,21 @@ for (const platform of ["firefox", "chromium"])
       /Travel/,
     );
 
+    get("folder-query").value = "travel";
+    get("folder-query").oninput();
+    get("folder-query").value = "   ";
+    get("folder-query").oninput();
+    t.mock.timers.tick(1000);
+    assert.equal(get("folder-results").children.length, 0);
+    assert.equal(get("recent-folders").children.length, 2);
+    get("folder-query").value = "work";
+    get("folder-query").oncompositionstart();
+    get("folder-query").oninput({ isComposing: true });
+    t.mock.timers.tick(2000);
+    assert.equal(get("folder-results").children.length, 0);
+    get("folder-query").oncompositionend();
+    t.mock.timers.tick(1000);
+    assert.equal(get("folder-results").children.length, 1);
     get("sync-mode").value = "both";
     get("sync-mode").onchange();
     await get("save-mode").onclick();
