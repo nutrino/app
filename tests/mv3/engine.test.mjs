@@ -1372,7 +1372,7 @@ for (const firefox of [true, false])
       title: "Current page",
       url: "https://current.example/",
     };
-    const folders = await c.engine.listLocalFolders();
+    const { folders } = await c.engine.listLocalFolders();
     assert.ok(folders.some((f) => f.id === parentId));
     const first = await c.engine.addBookmark(bookmark);
     assert.equal(first.existing, false);
@@ -1402,3 +1402,49 @@ for (const firefox of [true, false])
     await assert.rejects(c.engine.addBookmark(bookmark), /복원 중/);
     assert.equal(c.bookmarks.find(parentId).children.length, 1);
   });
+
+test("recent destination folders persist, deduplicate, cap at ten and omit removed folders", async () => {
+  const c = await setup();
+  const ids = [];
+  for (let i = 0; i < 12; i++) {
+    const folder = await c.bookmarks.create({
+      parentId: "toolbar_____",
+      title: `Folder ${i}`,
+    });
+    ids.push(folder.id);
+    await c.engine.addBookmark({
+      parentId: folder.id,
+      title: "Page",
+      url: "https://example.org/",
+    });
+  }
+  const expected = ids.slice(2).reverse();
+  assert.deepEqual((await c.engine.listLocalFolders()).recent, expected);
+  // Clicking an existing bookmark does not count as a new save.
+  await c.engine.addBookmark({
+    parentId: ids[2],
+    title: "Page",
+    url: "https://example.org/",
+  });
+  assert.deepEqual((await c.engine.listLocalFolders()).recent, expected);
+  await c.engine.addBookmark({
+    parentId: ids[2],
+    title: "Another",
+    url: "https://example.org/new",
+  });
+  const ordered = [ids[2], ...expected.filter((id) => id !== ids[2])];
+  c.engine = new Engine(c.store, c.native, () => c.api);
+  assert.deepEqual((await c.engine.listLocalFolders()).recent, ordered);
+  await c.bookmarks.removeTree(ids[2]);
+  const after = await c.engine.listLocalFolders();
+  assert.deepEqual(after.recent, ordered.slice(1));
+  const beforeFailure = await c.store.get("recentBookmarkFolders");
+  await assert.rejects(
+    c.engine.addBookmark({
+      parentId: ids[2],
+      title: "Gone",
+      url: "https://example.org/fail",
+    }),
+  );
+  assert.deepEqual(await c.store.get("recentBookmarkFolders"), beforeFailure);
+});

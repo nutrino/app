@@ -515,9 +515,14 @@ export class Engine {
     });
   }
   listLocalFolders() {
-    return this.exclusive(async () =>
-      localFolders(await this.native.bookmarks.getTree()),
-    );
+    return this.exclusive(async () => {
+      const folders = localFolders(await this.native.bookmarks.getTree());
+      const available = new Set(folders.map((folder) => folder.id));
+      const recent = ((await this.store.get("recentBookmarkFolders")) || [])
+        .filter((id) => available.has(id))
+        .slice(0, 10);
+      return { folders, recent };
+    });
   }
   addBookmark({ parentId, url, title } = {}) {
     return this.exclusive(async () => {
@@ -548,7 +553,15 @@ export class Engine {
       const existing = children.find((node) => node.url === url);
       if (existing) return { id: existing.id, existing: true };
       const node = await this.native.bookmarks.create({ parentId, title, url });
-      return { id: node.id, existing: false };
+      const available = new Set(folders.map((folder) => folder.id));
+      const recent = [
+        parentId,
+        ...((await this.store.get("recentBookmarkFolders")) || []).filter(
+          (id) => id !== parentId && available.has(id),
+        ),
+      ].slice(0, 10);
+      await this.store.put({ recentBookmarkFolders: recent });
+      return { id: node.id, existing: false, recent };
     });
   }
   setMode(mode) {

@@ -47,6 +47,7 @@ export class FolderPicker {
     this.rpc = rpc;
     this.get = get;
     this.folders = [];
+    this.recent = [];
     this.limit = 50;
     get("folder-query").oninput = () => {
       this.limit = 50;
@@ -80,7 +81,9 @@ export class FolderPicker {
     this.update(this.state || {}, this.busy);
     this.get("folder-feedback").textContent = "로컬 폴더를 읽는 중…";
     try {
-      this.folders = await this.rpc("local-folders");
+      const data = await this.rpc("local-folders");
+      this.folders = data.folders;
+      this.recent = data.recent;
       this.limit = 50;
       this.get("folder-feedback").textContent =
         "폴더를 누르면 현재 페이지를 저장합니다.";
@@ -115,16 +118,26 @@ export class FolderPicker {
     this.get("folder-more").hidden = matches.length <= this.limit;
     this.get("folder-results").replaceChildren();
     this.buttons = [];
-    for (const folder of matches.slice(0, this.limit)) {
+    this.get("recent-folders").replaceChildren();
+    const byId = new Map(this.folders.map((folder) => [folder.id, folder]));
+    const recent = this.recent
+      .map((id) => byId.get(id))
+      .filter(Boolean)
+      .slice(0, 10);
+    this.get("recent-folder-empty").hidden = recent.length > 0;
+    const appendFolder = (folder, list) => {
       const item = document.createElement("li");
       const button = document.createElement("button");
       button.type = "button";
       button.textContent = "📁 " + folder.path;
       button.onclick = () => this.add(folder);
       item.append(button);
-      this.get("folder-results").append(item);
+      this.get(list).append(item);
       this.buttons.push(button);
-    }
+    };
+    for (const folder of recent) appendFolder(folder, "recent-folders");
+    for (const folder of matches.slice(0, this.limit))
+      appendFolder(folder, "folder-results");
     this.update(this.state || {}, this.busy);
   }
   async add(folder) {
@@ -135,6 +148,10 @@ export class FolderPicker {
       const result = await this.rpc("add-bookmark", {
         data: { ...this.page, parentId: folder.id },
       });
+      if (result.recent) {
+        this.recent = result.recent;
+        this.render();
+      }
       this.get("folder-feedback").textContent = result.existing
         ? `이미 이 폴더에 저장되어 있습니다: ${folder.path}`
         : `저장했습니다: ${folder.path}`;

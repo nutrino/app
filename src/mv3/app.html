@@ -26,6 +26,11 @@
           autocomplete="off"
           aria-controls="folder-results"
         />
+        <p class="hint">최근 저장한 폴더 · 최대 10개</p>
+        <ul id="recent-folders" aria-label="최근 저장한 폴더"></ul>
+        <p id="recent-folder-empty" class="hint">
+          아직 이 확장에서 저장한 폴더가 없습니다.
+        </p>
         <p id="folder-count" class="hint" role="status"></p>
         <p id="folder-warning" class="hint" hidden></p>
         <ul id="folder-results" aria-label="로컬 북마크 폴더 검색 결과"></ul>
@@ -166,8 +171,8 @@
         /></label>
         <p id="library-status" role="status"></p>
         <ul id="results"></ul>
-        <button id="list-previous">이전 100개</button>
-        <button id="list-next">다음 100개</button>
+        <button id="list-previous">이전 30개</button>
+        <button id="list-next">다음 30개</button>
       </details>
       <footer>
         자동 동기화: 약 1분 간격 · 북마크 변경 시 자동 실행<br />복원이 끝날

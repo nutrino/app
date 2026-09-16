@@ -339,11 +339,11 @@ $("refresh-library").onclick = () => {
   loadLibrary(true);
 };
 $("list-previous").onclick = () => {
-  libraryOffset = Math.max(0, libraryOffset - 100);
+  libraryOffset = Math.max(0, libraryOffset - (libraryPage?.limit || 30));
   loadLibrary();
 };
 $("list-next").onclick = () => {
-  libraryOffset += 100;
+  libraryOffset += libraryPage?.limit || 30;
   loadLibrary();
 };
 $("server-library").ontoggle = () => {

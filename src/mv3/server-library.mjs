@@ -39,7 +39,7 @@ export function serverPage(
     ),
   );
   offset = Number.isSafeInteger(offset) && offset >= 0 ? offset : 0;
-  const limit = 100;
+  const limit = 30;
   return {
     total: items.length,
     offset,

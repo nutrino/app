@@ -248,13 +248,19 @@ for (const platform of ["firefox", "chromium"])
           if (message.type === "local-folders")
             return {
               ok: true,
-              data: [
-                { id: "10", title: "Work", path: "Toolbar / Work" },
-                { id: "11", title: "Travel", path: "Toolbar / Travel" },
-              ],
+              data: {
+                folders: [
+                  { id: "10", title: "Work", path: "Toolbar / Work" },
+                  { id: "11", title: "Travel", path: "Toolbar / Travel" },
+                ],
+                recent: ["11"],
+              },
             };
           if (message.type === "add-bookmark")
-            return { ok: true, data: { id: "12", existing: false } };
+            return {
+              ok: true,
+              data: { id: "12", existing: false, recent: ["10", "11"] },
+            };
           if (message.type === "server-list") {
             const folders = message.options.view === "folders";
             const child = message.options.parent === 3;
@@ -263,7 +269,7 @@ for (const platform of ["firefox", "chromium"])
               data: {
                 total: 1,
                 offset: 0,
-                limit: 100,
+                limit: 30,
                 path: child ? [{ id: 3, title: "Folder" }] : [],
                 items: [
                   folders && !child
@@ -322,6 +328,15 @@ for (const platform of ["firefox", "chromium"])
     assert.equal(added.data.parentId, "10");
     assert.equal(added.data.url, "https://example.org/current");
     assert.match(get("folder-feedback").textContent, /저장했습니다/);
+    assert.equal(get("recent-folders").children.length, 2);
+    assert.match(
+      get("recent-folders").children[0].children[0].textContent,
+      /Work/,
+    );
+    assert.match(
+      get("recent-folders").children[1].children[0].textContent,
+      /Travel/,
+    );
 
     get("sync-mode").value = "both";
     get("sync-mode").onchange();

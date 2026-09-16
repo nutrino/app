@@ -184,17 +184,20 @@ a {
   max-height: 3.1em;
   overflow-y: auto;
 }
-#folder-results {
+#folder-results,
+#recent-folders {
   list-style: none;
   padding: 0;
   margin: 8px 0;
   max-height: 250px;
   overflow-y: auto;
 }
-#folder-results li {
+#folder-results li,
+#recent-folders li {
   margin: 0;
 }
-#folder-results button {
+#folder-results button,
+#recent-folders button {
   width: 100%;
   text-align: left;
   margin: 2px 0;

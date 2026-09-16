@@ -18,15 +18,15 @@ test("recent server pages preserve data and sort IDs across folders", () => {
   ]);
   const original = structuredClone(source);
   const first = serverPage(source);
-  const second = serverPage(source, { offset: 100 });
-  const last = serverPage(source, { offset: 200 });
+  const second = serverPage(source, { offset: 30 });
+  const last = serverPage(source, { offset: 180 });
   assert.equal(first.total, 205);
-  assert.equal(first.items.length, 100);
+  assert.equal(first.items.length, 30);
   assert.equal(first.items[0].id, 214);
-  assert.equal(second.items[0].id, 114);
+  assert.equal(second.items[0].id, 184);
   assert.deepEqual(
     last.items.map((n) => n.id),
-    [14, 13, 12, 11, 10],
+    Array.from({ length: 25 }, (_, i) => 34 - i),
   );
   assert.deepEqual(source, original);
 });
