@@ -3,6 +3,7 @@ import { MAX_BYTES } from "./protocol.mjs";
 import { ConnectionForm, needsSetupTab } from "./connection-form.mjs";
 import { BUILD_INFO, describeBuild, sameBuild } from "./build-info.mjs";
 import { FolderPicker } from "./folder-picker.mjs";
+import { formatKST } from "./time.mjs";
 const $ = (id) => document.getElementById(id);
 const folderPicker = new FolderPicker(browser, rpc, $);
 let state;
@@ -57,7 +58,7 @@ async function refresh() {
   $("account").hidden = !state.connected;
   $("server").textContent = state.url || "";
   $("summary").textContent =
-    `${state.count ?? 0}개 항목 · 마지막 서버 저장: ${state.lastUpdated || "없음"}`;
+    `${state.count ?? 0}개 항목 · 마지막 서버 저장: ${formatKST(state.lastUpdated)}`;
   $("preview").hidden = !state.preview;
   if (!modeDirty) $("sync-mode").value = state.mode;
   $("mode-description").textContent = modeText[$("sync-mode").value];
@@ -214,7 +215,7 @@ for (const button of document.querySelectorAll("[data-export]"))
       );
       const anchor = document.createElement("a");
       anchor.href = url;
-      anchor.download = `xbrowsersync-${button.dataset.export}-${new Date().toISOString().slice(0, 10)}.json`;
+      anchor.download = `xbrowsersync-${button.dataset.export}-${formatKST(new Date()).slice(0, 10)}.json`;
       anchor.click();
       setTimeout(() => URL.revokeObjectURL(url), 60000);
     });
@@ -310,7 +311,7 @@ async function loadLibrary(refreshServer = false) {
         ? "최근 추가 순: 기존 xBrowserSync와 같은 서버 ID 내림차순입니다. 추가 날짜는 서버에 저장돼 있지 않습니다."
         : "서버에 저장된 폴더 순서입니다. 폴더를 누르면 하위 항목을 표시합니다. 검색은 현재 폴더 안에서 수행합니다.";
     $("library-status").textContent =
-      `${page.total}개 중 ${page.total ? page.offset + 1 : 0}–${Math.min(page.offset + page.limit, page.total)} · 서버 저장: ${page.lastUpdated} · 조회: ${page.fetchedAt}`;
+      `${page.total}개 중 ${page.total ? page.offset + 1 : 0}–${Math.min(page.offset + page.limit, page.total)} · 서버 저장: ${formatKST(page.lastUpdated)} · 조회: ${formatKST(page.fetchedAt)}`;
   } catch (error) {
     if (request === libraryRequest)
       $("library-status").textContent = error.message;
