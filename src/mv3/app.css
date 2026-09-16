@@ -150,7 +150,9 @@ a {
     margin: 32px auto;
     border: 1px solid #becadb;
     border-radius: 10px;
-    overflow: hidden;
+  }
+  header {
+    border-radius: 9px 9px 0 0;
   }
 }
 @media (prefers-color-scheme: dark) {
