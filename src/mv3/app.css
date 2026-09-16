@@ -211,3 +211,15 @@ a {
     color: #ffb4a4;
   }
 }
+
+.folder-separator {
+  font-size: 0.8em;
+  margin-inline: 0.3em;
+  opacity: 0.85;
+}
+#quick-bookmark mark {
+  background: #ffdf5d;
+  color: #201900;
+  border-radius: 2px;
+  font-weight: 700;
+}

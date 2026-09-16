@@ -9,7 +9,8 @@ export function localFolders(tree) {
         folders.push({
           id: node.id,
           title: node.title || "(이름 없는 폴더)",
-          path: path.join(" / "),
+          path: path.join(" » "),
+          segments: path,
         });
       walk(node.children || [], path, readonly);
     }
@@ -33,6 +34,43 @@ export function searchFolders(folders, query) {
     const path = folder.path.normalize("NFKC").toLocaleLowerCase();
     return words.every((word) => path.includes(word));
   });
+}
+// Map normalized search matches back to original graphemes (Hangul, fullwidth,
+// combining marks). Render only text nodes, never bookmark names as HTML.
+export function highlightedParts(text, query) {
+  const words = query
+    .normalize("NFKC")
+    .toLocaleLowerCase()
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  const graphemes = [
+    ...new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(text),
+  ];
+  let normalized = "";
+  const owners = [];
+  graphemes.forEach(({ segment }, index) => {
+    const folded = segment.normalize("NFKC").toLocaleLowerCase();
+    normalized += folded;
+    for (let i = 0; i < folded.length; i++) owners.push(index);
+  });
+  const hits = new Set();
+  for (const word of words) {
+    let from = 0,
+      at;
+    while ((at = normalized.indexOf(word, from)) !== -1) {
+      for (let i = at; i < at + word.length; i++) hits.add(owners[i]);
+      from = at + 1;
+    }
+  }
+  const parts = [];
+  graphemes.forEach(({ segment }, index) => {
+    const match = hits.has(index);
+    if (parts.length && parts.at(-1).match === match)
+      parts.at(-1).text += segment;
+    else parts.push({ text: segment, match });
+  });
+  return parts;
 }
 export function bookmarkBlock(state) {
   if (state.applying || state.apply)
@@ -129,7 +167,24 @@ export class FolderPicker {
       const item = document.createElement("li");
       const button = document.createElement("button");
       button.type = "button";
-      button.textContent = "📁 " + folder.path;
+      button.textContent = "📁 ";
+      const segments = folder.segments || [folder.path];
+      segments.forEach((segment, index) => {
+        if (index) {
+          const separator = document.createElement("span");
+          separator.className = "folder-separator";
+          separator.textContent = " » ";
+          button.append(separator);
+        }
+        for (const part of highlightedParts(
+          segment,
+          this.get("folder-query").value,
+        )) {
+          const text = document.createElement(part.match ? "mark" : "span");
+          text.textContent = part.text;
+          button.append(text);
+        }
+      });
       button.onclick = () => this.add(folder);
       item.append(button);
       this.get(list).append(item);

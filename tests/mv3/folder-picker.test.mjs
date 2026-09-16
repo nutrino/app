@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  highlightedParts,
   localFolders,
   searchFolders,
   bookmarkBlock,
@@ -66,4 +67,18 @@ test("quick add blocks restore and active server-authoritative sync but permits 
     { enabled: true, mode: "upload" },
   ])
     assert.equal(bookmarkBlock(state), "");
+});
+
+test("highlight retains original Unicode text and combines overlapping literal matches", () => {
+  const text = "개발 ＤＯＣＳ banana <b>";
+  const parts = highlightedParts(text, "개발 docs ana <b>");
+  assert.equal(parts.map((part) => part.text).join(""), text);
+  assert.deepEqual(
+    parts.filter((part) => part.match).map((part) => part.text),
+    ["개발", "ＤＯＣＳ", "anana", "<b>"],
+  );
+  assert.equal(
+    highlightedParts(text, "   ").some((part) => part.match),
+    false,
+  );
 });

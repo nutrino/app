@@ -208,7 +208,17 @@ for (const platform of ["firefox", "chromium"])
     );
     const element = () => ({
       value: "",
-      textContent: "",
+      ownText: "",
+      get textContent() {
+        return (
+          this.ownText +
+          this.children.map((child) => child.textContent).join("")
+        );
+      },
+      set textContent(value) {
+        this.ownText = value;
+        this.children = [];
+      },
       children: [],
       dataset: {},
       classList: { toggle() {} },
@@ -250,8 +260,18 @@ for (const platform of ["firefox", "chromium"])
               ok: true,
               data: {
                 folders: [
-                  { id: "10", title: "Work", path: "Toolbar / Work" },
-                  { id: "11", title: "Travel", path: "Toolbar / Travel" },
+                  {
+                    id: "10",
+                    title: "Work",
+                    path: "Toolbar » Work",
+                    segments: ["Toolbar", "Work"],
+                  },
+                  {
+                    id: "11",
+                    title: "Travel",
+                    path: "Toolbar » Travel",
+                    segments: ["Toolbar", "Travel"],
+                  },
                 ],
                 recent: ["11"],
               },
