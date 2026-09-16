@@ -1,5 +1,16 @@
 import { ROOTS, SEPARATOR, validateTree } from "./protocol.mjs";
-function chromeAboutURL(url) {
+function chromiumURL(url) {
+  // Edge stores about:reader as edge://reader/. Canonicalize only this
+  // observed alias; keep the full query/hash and all other Edge URLs distinct.
+  if (
+    url.protocol === "edge:" &&
+    url.hostname === "reader" &&
+    url.pathname === "/" &&
+    !url.username &&
+    !url.password &&
+    !url.port
+  )
+    return `chrome://reader/${url.search}${url.hash}`;
   if (
     url.protocol !== "about:" ||
     !/^[a-z0-9-]+$/i.test(url.pathname) ||
@@ -16,7 +27,7 @@ function sameURL(a, b, chromium = false) {
       original = new URL(b);
     return (
       actual.href === original.href ||
-      (chromium && actual.href === chromeAboutURL(original))
+      (chromium && chromiumURL(actual) === chromiumURL(original))
     );
   } catch {
     return false;
@@ -34,7 +45,7 @@ export class Native {
     if (url) {
       try {
         const parsed = new URL(url);
-        url = this.firefox ? parsed.href : chromeAboutURL(parsed);
+        url = this.firefox ? parsed.href : chromiumURL(parsed);
       } catch {
         /* Already validated or browser-local URL. */
       }
@@ -249,7 +260,7 @@ export class Native {
         return `folder:${this.firefox ? node.title || "" : chromeTitle(node.title || "")}`;
       try {
         const url = new URL(node.url);
-        return `url:${this.firefox ? url.href : chromeAboutURL(url)}`;
+        return `url:${this.firefox ? url.href : chromiumURL(url)}`;
       } catch {
         return `url:${node.url}`;
       }

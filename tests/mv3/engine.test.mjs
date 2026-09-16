@@ -1288,3 +1288,77 @@ test("explicit URL diagnostic identifies a changed bookmark without altering the
   assert.deepEqual(await c.bookmarks.getTree(), nativeBefore);
   assert.equal(c.writes(), 0);
 });
+
+test("Edge reader alias preserves full query/hash and does not hide genuine URL changes", () => {
+  const native = new Native({}, false);
+  const original = "about:reader?url=https%3A%2F%2Fexample.org%2Fdocs#section";
+  const actual = "edge://reader/?url=https%3A%2F%2Fexample.org%2Fdocs#section";
+  const node = (url) => ({ title: "Reader", url });
+  assert.equal(native.matches(node(actual), node(original)), true);
+  assert.equal(
+    native.initialKey(node(actual)),
+    native.initialKey(node(original)),
+  );
+  for (const url of [
+    actual + "changed",
+    actual.replace("docs", "other"),
+    actual.replace("reader/", "reader/other"),
+    actual.replace("reader/", "user@reader/"),
+    "edge://blank/",
+    "edge://srcdoc/",
+  ]) {
+    assert.equal(native.matches(node(url), node(original)), false);
+  }
+  assert.equal(
+    native.matches(node("edge://blank/"), node("about:blank")),
+    false,
+  );
+  assert.equal(
+    native.matches(node("edge://srcdoc/"), node("about:srcdoc")),
+    false,
+  );
+  assert.equal(
+    new Native({}, true).matches(node(actual), node(original)),
+    false,
+  );
+});
+
+test("Edge paused reader URL/order mismatch resumes without recreating bookmarks or uploading", async () => {
+  const c = await setup(false);
+  const original = "about:reader?url=https%3A%2F%2Fexample.org%2Fdocs";
+  const rewritten = "edge://reader/?url=https%3A%2F%2Fexample.org%2Fdocs";
+  const source = structuredClone(tree);
+  source[0].children[0].children[0].url = original;
+  c.server.bookmarks = await encrypt(source, key);
+  const create = c.bookmarks.create.bind(c.bookmarks);
+  c.bookmarks.create = (spec) =>
+    create({ ...spec, url: spec.url === original ? rewritten : spec.url });
+  await c.engine.startRestore();
+  const snapshot = c.native.snapshot.bind(c.native);
+  c.native.snapshot = async (...args) => {
+    c.bookmarks.find("1").children.reverse();
+    const result = await snapshot(...args);
+    // Simulate the previous release failing to recognize Edge's reader alias.
+    const walk = (nodes) =>
+      nodes.forEach((n) => {
+        if (n.url === original) n.url = rewritten;
+        if (n.children) walk(n.children);
+      });
+    walk(result.tree);
+    return result;
+  };
+  await c.engine.tick();
+  assert.match((await c.engine.status()).error, /url 1개/);
+  assert.match((await c.engine.status()).error, /순서 2개/);
+  assert.equal((await c.engine.status()).enabled, false);
+  c.native.snapshot = snapshot;
+  for (const op of ["create", "update", "removeTree"])
+    c.bookmarks[op] = async () => assert.fail(`resume must not call ${op}`);
+  c.engine = new Engine(c.store, c.native, () => c.api);
+  await c.engine.pause(true);
+  await settle(c);
+  assert.deepEqual(await c.store.get("base"), source);
+  assert.equal((await c.engine.status()).applying, false);
+  await c.engine.tick();
+  assert.equal(c.writes(), 0);
+});
