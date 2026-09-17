@@ -28,6 +28,7 @@ for (const platform of ["firefox", "chromium"])
       "alarms",
       "unlimitedStorage",
       "activeTab",
+      "cookies",
     ]);
     assert.ok(
       platform === "firefox"
@@ -378,8 +379,10 @@ for (const platform of ["firefox", "chromium"])
     get("folder-query").value = "work";
     get("folder-query").oncompositionstart();
     get("folder-query").oninput({ isComposing: true });
-    t.mock.timers.tick(2000);
+    t.mock.timers.tick(999);
     assert.equal(get("folder-results").children.length, 0);
+    t.mock.timers.tick(1);
+    assert.equal(get("folder-results").children.length, 1);
     get("folder-query").oncompositionend();
     t.mock.timers.tick(1000);
     assert.equal(get("folder-results").children.length, 1);

@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  FolderPicker,
   highlightedParts,
   localFolders,
   searchFolders,
@@ -81,4 +82,28 @@ test("highlight retains original Unicode text and combines overlapping literal m
     highlightedParts(text, "   ").some((part) => part.match),
     false,
   );
+});
+
+test("folder loading continues when active page access fails or the settings tab is active", async () => {
+  for (const query of [
+    async () => {
+      throw Error("tab denied");
+    },
+    async () => [{ url: "chrome-extension://test/app.html" }],
+  ]) {
+    const elements = new Map();
+    const get = (id) => {
+      if (!elements.has(id)) elements.set(id, { value: "", focus() {} });
+      return elements.get(id);
+    };
+    const picker = new FolderPicker({ tabs: { query } }, () => {}, get);
+    let loaded = false;
+    picker.loadFolders = async () => {
+      loaded = true;
+    };
+    await picker.load();
+    assert.equal(loaded, true);
+    assert.equal(picker.page, undefined);
+    assert.ok(get("folder-feedback").textContent);
+  }
 });

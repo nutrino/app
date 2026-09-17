@@ -6,7 +6,7 @@ import {
   needsSetupTab,
 } from "../../src/mv3/connection-form.mjs";
 
-function fixture(persisted = {}, transient = {}) {
+function fixture(persisted = {}, transient = {}, cookieJar = {}) {
   const area = (data) => ({
     data,
     async get(key) {
@@ -22,6 +22,15 @@ function fixture(persisted = {}, transient = {}) {
   let requests = 0;
   const browser = {
     storage,
+    cookies: {
+      async get({ url, name }) {
+        return cookieJar[url + name] || null;
+      },
+      async set(data) {
+        cookieJar[data.url + data.name] = structuredClone(data);
+        return data;
+      },
+    },
     permissions: {
       async contains({ origins }) {
         return origins.every((origin) => granted.has(origin));
@@ -202,4 +211,51 @@ test("existing connection supplies correct address and only unconnected popups o
   assert.equal(needsSetupTab(false, "?popup=1"), true);
   assert.equal(needsSetupTab(true, "?popup=1"), false);
   assert.equal(needsSetupTab(false, ""), false);
+});
+
+test("connection cookie restores address and ID after extension storage is removed, never password", async () => {
+  const jar = {};
+  const first = fixture({}, {}, jar).form();
+  await first.load();
+  first.fields.url.value = "https://sync.example/api";
+  first.fields.id.value = "0123456789abcdef0123456789abcdef";
+  first.fields.password.value = "session-password-only";
+  await first.save();
+  const saved = Object.values(jar)[0];
+  assert.deepEqual(JSON.parse(decodeURIComponent(saved.value)), {
+    url: first.fields.url.value,
+    id: first.fields.id.value,
+  });
+  assert.equal(saved.httpOnly, true);
+  assert.equal(saved.secure, true);
+  assert.equal(saved.sameSite, "strict");
+  assert.match(saved.url, /^https:\/\/settings\.xbrowsersync\.invalid\//);
+  assert.ok(saved.expirationDate > Date.now() / 1000 + 300 * 86400);
+  const reinstall = fixture({}, {}, jar);
+  const restored = reinstall.form();
+  await restored.load();
+  assert.equal(restored.fields.url.value, first.fields.url.value);
+  assert.equal(restored.fields.id.value, first.fields.id.value);
+  assert.equal(restored.fields.password.value, "");
+  assert.equal(restored.fields.credentials.disabled, true);
+  assert.equal(
+    reinstall.requests(),
+    0,
+    "restoring a draft never grants access or connects",
+  );
+});
+test("malformed or unavailable cookies do not block local form storage", async () => {
+  const f = fixture({
+    connectionDraft: { url: "https://local.example", id: "local-id" },
+  });
+  f.browser.cookies.get = async () => ({ value: "%invalid" });
+  f.browser.cookies.set = async () => {
+    throw Error("disabled");
+  };
+  const form = f.form();
+  await form.load();
+  assert.equal(form.fields.url.value, "https://local.example");
+  form.fields.id.value = "edited-id";
+  await form.save();
+  assert.equal(f.browser.storage.local.data.connectionDraft.id, "edited-id");
 });

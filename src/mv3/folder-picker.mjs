@@ -90,29 +90,23 @@ export class FolderPicker {
     this.limit = 50;
     this.query = "";
     const input = get("folder-query");
-    const scheduleSearch = (event = {}) => {
+    const scheduleSearch = () => {
       clearTimeout(this.searchTimer);
       this.query = "";
       this.limit = 50;
       const query = input.value.trim();
-      this.waiting = !!query;
       this.render();
-      if (!query || this.composing || event.isComposing) return;
+      if (!query) return;
       this.searchTimer = setTimeout(() => {
-        this.waiting = false;
         this.query = query;
         this.render();
       }, 1000);
     };
     input.oninput = scheduleSearch;
-    input.oncompositionstart = () => {
-      this.composing = true;
-      scheduleSearch();
-    };
-    input.oncompositionend = () => {
-      this.composing = false;
-      scheduleSearch();
-    };
+    // Search the current input after inactivity even while an IME keeps its
+    // final character in composition until Enter/blur.
+    input.oncompositionstart = scheduleSearch;
+    input.oncompositionend = scheduleSearch;
     get("folder-more").onclick = () => {
       this.limit += 50;
       this.render();
@@ -120,6 +114,7 @@ export class FolderPicker {
     get("folder-reload").onclick = () => this.loadFolders();
   }
   async load() {
+    let pageError;
     try {
       const [tab] = await this.browser.tabs.query({
         active: true,
@@ -130,11 +125,13 @@ export class FolderPicker {
       this.page = { url: tab.url, title: tab.title || tab.url };
       this.get("bookmark-page").textContent = this.page.title;
       this.get("bookmark-page").title = this.page.url;
-      await this.loadFolders();
-      this.get("folder-query").focus();
     } catch (error) {
-      this.get("folder-feedback").textContent = error.message;
+      pageError = error.message;
     }
+    // Folder browsing must also work in a settings tab or on a restricted page.
+    await this.loadFolders();
+    if (pageError) this.get("folder-feedback").textContent = pageError;
+    this.get("folder-query").focus();
   }
   async loadFolders() {
     this.loading = true;
@@ -173,11 +170,10 @@ export class FolderPicker {
   }
   render() {
     const matches = this.query ? searchFolders(this.folders, this.query) : [];
-    this.get("folder-count").textContent = this.waiting
-      ? "입력을 멈추면 1초 후 검색합니다."
-      : !this.query
-        ? "폴더 검색어를 입력하세요."
-        : `${matches.length}개 폴더 검색됨 · ${Math.min(matches.length, this.limit)}개 표시`;
+    this.get("folder-count").hidden = !this.query;
+    this.get("folder-count").textContent = this.query
+      ? `${matches.length}개 폴더 검색됨 · ${Math.min(matches.length, this.limit)}개 표시`
+      : "";
     this.get("folder-more").hidden = matches.length <= this.limit;
     this.get("folder-results").replaceChildren();
     this.buttons = [];

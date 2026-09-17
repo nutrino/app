@@ -130,7 +130,10 @@ const connection = new ConnectionForm(
     permission: $("server-permission"),
     credentials: $("credentials"),
   },
-  notice,
+  (text, error) => {
+    if (error) errorUntil = Date.now() + 15000;
+    notice(text, error);
+  },
 );
 $("grant-server").onclick = () => action(() => connection.grant());
 $("diagnose").onclick = () =>

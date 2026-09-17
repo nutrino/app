@@ -1,5 +1,10 @@
 import { hostPermission } from "./protocol.mjs";
 
+import {
+  readConnectionCookie,
+  writeConnectionCookie,
+} from "./connection-cookie.mjs";
+
 const DRAFT = "connectionDraft";
 const SECRET = "connectionPassword";
 
@@ -28,12 +33,21 @@ export class ConnectionForm {
       this.browser.storage.local.get(DRAFT),
       this.browser.storage.session.get(SECRET),
     ]);
-    const draft = local[DRAFT] || {};
+    let cookie = {};
+    try {
+      cookie = await readConnectionCookie(this.browser);
+    } catch {
+      this.notify(
+        "연결 정보 쿠키를 읽지 못했습니다. 확장 권한과 쿠키 설정을 확인하세요.",
+        true,
+      );
+    }
+    const draft = local[DRAFT] || cookie;
     // An existing connection is authoritative when upgrading older builds.
     this.fields.url.value = status.url ?? draft.url ?? "";
     this.fields.id.value = status.id ?? draft.id ?? "";
     this.fields.password.value = session[SECRET] || "";
-    if (status.url) await this.save();
+    if (status.url || local[DRAFT] || cookie.url) await this.save();
     await this.checkPermission();
   }
   save() {
@@ -42,6 +56,12 @@ export class ConnectionForm {
       Promise.all([
         this.browser.storage.local.set({ [DRAFT]: { url, id } }),
         this.browser.storage.session.set({ [SECRET]: password }),
+        writeConnectionCookie(this.browser, { url, id }).catch(() => {
+          this.notify(
+            "주소·ID는 이 확장에 저장했지만 쿠키 저장에 실패했습니다. 재설치 후 복원하려면 확장 권한과 쿠키 설정을 확인하세요.",
+            true,
+          );
+        }),
       ]);
     // Serialize rapid edits so a slower previous write cannot win.
     this.pending = this.pending.then(write, write);

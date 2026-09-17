@@ -96,7 +96,9 @@ async function main() {
       "alarms",
       "unlimitedStorage",
       "activeTab",
+      "cookies",
     ],
+    host_permissions: ["https://settings.xbrowsersync.invalid/*"],
     optional_host_permissions: ["http://*/*", "https://*/*"],
     background:
       platform === "firefox"
