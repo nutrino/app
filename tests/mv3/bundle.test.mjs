@@ -76,6 +76,7 @@ for (const platform of ["firefox", "chromium"])
           },
         },
         alarms: {
+          get: async () => ({ name: "xbs-mv3-sync" }),
           onAlarm: {
             addListener(fn) {
               alarm = fn;
@@ -138,6 +139,11 @@ for (const platform of ["firefox", "chromium"])
     assert.equal(first.data.connected, false);
     assert.deepEqual(JSON.parse(JSON.stringify(first.data.build)), buildInfo);
     const rpc = boot();
+    assert.equal(
+      rpc.timers.length,
+      0,
+      "opening/waking worker must not trigger a sync",
+    );
     rpc.installed({ reason: "update" });
     assert.equal(rpc.tabs.length, 0);
     rpc.installed({ reason: "install" });
@@ -346,11 +352,11 @@ for (const platform of ["firefox", "chromium"])
     assert.equal(get("recent-folders").children.length, 1);
     get("folder-query").value = "wo";
     get("folder-query").oninput();
-    t.mock.timers.tick(999);
+    t.mock.timers.tick(499);
     assert.equal(get("folder-results").children.length, 0);
     get("folder-query").value = "work";
     get("folder-query").oninput();
-    t.mock.timers.tick(999);
+    t.mock.timers.tick(499);
     assert.equal(get("folder-results").children.length, 0);
     t.mock.timers.tick(1);
     assert.equal(get("folder-results").children.length, 1);
@@ -373,18 +379,18 @@ for (const platform of ["firefox", "chromium"])
     get("folder-query").oninput();
     get("folder-query").value = "   ";
     get("folder-query").oninput();
-    t.mock.timers.tick(1000);
+    t.mock.timers.tick(500);
     assert.equal(get("folder-results").children.length, 0);
     assert.equal(get("recent-folders").children.length, 2);
     get("folder-query").value = "work";
     get("folder-query").oncompositionstart();
     get("folder-query").oninput({ isComposing: true });
-    t.mock.timers.tick(999);
+    t.mock.timers.tick(499);
     assert.equal(get("folder-results").children.length, 0);
     t.mock.timers.tick(1);
     assert.equal(get("folder-results").children.length, 1);
     get("folder-query").oncompositionend();
-    t.mock.timers.tick(1000);
+    t.mock.timers.tick(500);
     assert.equal(get("folder-results").children.length, 1);
     get("sync-mode").value = "both";
     get("sync-mode").onchange();

@@ -1436,6 +1436,7 @@ test("recent destination folders persist, deduplicate, cap at ten and omit remov
   c.engine = new Engine(c.store, c.native, () => c.api);
   assert.deepEqual((await c.engine.listLocalFolders()).recent, ordered);
   await c.bookmarks.removeTree(ids[2]);
+  c.engine.invalidateLocalFolders();
   const after = await c.engine.listLocalFolders();
   assert.deepEqual(after.recent, ordered.slice(1));
   const beforeFailure = await c.store.get("recentBookmarkFolders");
@@ -1447,4 +1448,62 @@ test("recent destination folders persist, deduplicate, cap at ten and omit remov
     }),
   );
   assert.deepEqual(await c.store.get("recentBookmarkFolders"), beforeFailure);
+});
+
+test("folder reads bypass blocked sync and share a cached native index until invalidated", async () => {
+  const c = await setup();
+  let release;
+  const gate = new Promise((resolve) => {
+    release = resolve;
+  });
+  const blockedSync = c.engine.exclusive(() => gate);
+  const readTree = c.bookmarks.getTree.bind(c.bookmarks);
+  let reads = 0;
+  c.bookmarks.getTree = async () => {
+    reads++;
+    return readTree();
+  };
+  let timeout;
+  try {
+    const result = await Promise.race([
+      Promise.all([c.engine.listLocalFolders(), c.engine.listLocalFolders()]),
+      new Promise((_, reject) => {
+        timeout = setTimeout(
+          () => reject(Error("folder lookup queued behind sync")),
+          1000,
+        );
+      }),
+    ]);
+    assert.equal(reads, 1);
+    assert.ok(result[0].folders.length);
+    assert.deepEqual(result[0], result[1]);
+  } finally {
+    clearTimeout(timeout);
+    release();
+    await blockedSync;
+  }
+  await c.engine.listLocalFolders();
+  assert.equal(reads, 1);
+  await c.bookmarks.create({ parentId: "toolbar_____", title: "New folder" });
+  c.engine.invalidateLocalFolders();
+  assert.ok(
+    (await c.engine.listLocalFolders()).folders.some(
+      (f) => f.title === "New folder",
+    ),
+  );
+  assert.equal(reads, 2);
+  await c.engine.listLocalFolders(true);
+  assert.equal(reads, 3);
+  assert.equal(c.writes(), 0);
+});
+
+test("a failed folder index read can be retried", async () => {
+  const c = await setup();
+  const readTree = c.bookmarks.getTree.bind(c.bookmarks);
+  c.bookmarks.getTree = async () => {
+    throw Error("temporary failure");
+  };
+  await assert.rejects(c.engine.listLocalFolders(), /temporary failure/);
+  c.bookmarks.getTree = readTree;
+  assert.ok((await c.engine.listLocalFolders()).folders.length);
 });

@@ -58,7 +58,10 @@ for (const event of [
   "onChildrenReordered",
   "onImportEnded",
 ]) {
-  browser.bookmarks[event]?.addListener(() => schedule(1500));
+  browser.bookmarks[event]?.addListener(() => {
+    engine.invalidateLocalFolders();
+    schedule(1500);
+  });
 }
 browser.runtime.onMessage.addListener((message, sender) => {
   if (
@@ -69,7 +72,7 @@ browser.runtime.onMessage.addListener((message, sender) => {
   const dispatch = async () => {
     switch (message?.type) {
       case "local-folders":
-        return engine.listLocalFolders();
+        return engine.listLocalFolders(message.refresh === true);
       case "add-bookmark":
         return engine.addBookmark(message.data);
       case "diagnose":
@@ -120,7 +123,10 @@ browser.runtime.onMessage.addListener((message, sender) => {
     (error) => ({ ok: false, error: error.message }),
   );
 });
-browser.runtime.onStartup.addListener(() => schedule(0));
+browser.runtime.onStartup.addListener(() => {
+  engine.invalidateLocalFolders();
+  schedule(0);
+});
 browser.runtime.onInstalled.addListener((details) => {
   schedule(0);
   if (details.reason === "install")
@@ -128,5 +134,11 @@ browser.runtime.onInstalled.addListener((details) => {
       .create({ url: browser.runtime.getURL("app.html") })
       .catch(() => {});
 });
-browser.alarms.create("xbs-mv3-sync", { periodInMinutes: 1 });
-schedule(0);
+// Waking the worker to open a popup must neither sync immediately nor reset
+// the existing periodic alarm. Startup/install, edits and explicit sync still run.
+browser.alarms
+  .get("xbs-mv3-sync")
+  .then((alarm) => {
+    if (!alarm) browser.alarms.create("xbs-mv3-sync", { periodInMinutes: 1 });
+  })
+  .catch(() => {});

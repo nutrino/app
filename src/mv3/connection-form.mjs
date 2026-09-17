@@ -47,7 +47,15 @@ export class ConnectionForm {
     this.fields.url.value = status.url ?? draft.url ?? "";
     this.fields.id.value = status.id ?? draft.id ?? "";
     this.fields.password.value = session[SECRET] || "";
-    if (status.url || local[DRAFT] || cookie.url) await this.save();
+    const { url, id } = this.values();
+    if (
+      (url || id) &&
+      (local[DRAFT]?.url !== url ||
+        local[DRAFT]?.id !== id ||
+        cookie.url !== url ||
+        cookie.id !== id)
+    )
+      await this.save();
     await this.checkPermission();
   }
   save() {

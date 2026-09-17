@@ -39,8 +39,8 @@ function notice(text, error = false) {
   $("notice").textContent = text;
   $("notice").classList.toggle("error", error);
 }
-async function refresh() {
-  state = await rpc("status");
+async function refresh(nextState) {
+  state = nextState || (await rpc("status"));
   $("runtime-build").textContent = "실행부 · " + describeBuild(state.build);
   $("build-match").textContent = sameBuild(BUILD_INFO, state.build)
     ? "화면과 실행부가 같은 빌드입니다."
@@ -366,12 +366,13 @@ $("search").oninput = () => {
   }, 250);
 };
 async function initialize() {
+  folderPicker.update({}, true);
+  const foldersLoading = folderPicker.load();
   const status = await rpc("status");
-  await connection.load(status);
-  connection.bind();
-  await refresh();
+  const formLoading = connection.load(status).then(() => connection.bind());
+  await refresh(status);
   ready = true;
-  folderPicker.load();
+  await Promise.all([formLoading, foldersLoading]);
 }
 initialize().catch((error) => notice(error.message, true));
 setInterval(() => {

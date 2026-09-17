@@ -514,15 +514,28 @@ export class Engine {
       serverBackup: tree,
     });
   }
-  listLocalFolders() {
-    return this.exclusive(async () => {
-      const folders = localFolders(await this.native.bookmarks.getTree());
-      const available = new Set(folders.map((folder) => folder.id));
-      const recent = ((await this.store.get("recentBookmarkFolders")) || [])
-        .filter((id) => available.has(id))
-        .slice(0, 10);
-      return { folders, recent };
-    });
+  invalidateLocalFolders() {
+    this.folderIndex = undefined;
+  }
+  async listLocalFolders(refresh = false) {
+    if (refresh) this.invalidateLocalFolders();
+    // Read-only UI requests must not queue behind a network sync/restore.
+    // Share one native tree read until a bookmark event invalidates the index.
+    const index = (this.folderIndex ||= this.native.bookmarks
+      .getTree()
+      .then(localFolders));
+    let folders;
+    try {
+      folders = await index;
+    } catch (error) {
+      if (this.folderIndex === index) this.invalidateLocalFolders();
+      throw error;
+    }
+    const available = new Set(folders.map((folder) => folder.id));
+    const recent = ((await this.store.get("recentBookmarkFolders")) || [])
+      .filter((id) => available.has(id))
+      .slice(0, 10);
+    return { folders, recent };
   }
   addBookmark({ parentId, url, title } = {}) {
     return this.exclusive(async () => {
@@ -553,6 +566,7 @@ export class Engine {
       const existing = children.find((node) => node.url === url);
       if (existing) return { id: existing.id, existing: true };
       const node = await this.native.bookmarks.create({ parentId, title, url });
+      this.invalidateLocalFolders();
       const available = new Set(folders.map((folder) => folder.id));
       const recent = [
         parentId,

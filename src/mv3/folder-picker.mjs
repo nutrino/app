@@ -1,3 +1,7 @@
+const folderCollator = new Intl.Collator("ko", { numeric: true });
+const graphemeSegmenter = new Intl.Segmenter(undefined, {
+  granularity: "grapheme",
+});
 export function localFolders(tree) {
   const folders = [];
   const walk = (nodes, parents = [], blocked = false) => {
@@ -19,8 +23,7 @@ export function localFolders(tree) {
   for (const root of tree) walk(root.children || []);
   return folders.sort(
     (a, b) =>
-      a.path.localeCompare(b.path, "ko", { numeric: true }) ||
-      a.id.localeCompare(b.id),
+      folderCollator.compare(a.path, b.path) || a.id.localeCompare(b.id),
   );
 }
 export function searchFolders(folders, query) {
@@ -45,9 +48,7 @@ export function highlightedParts(text, query) {
     .trim()
     .split(/\s+/)
     .filter(Boolean);
-  const graphemes = [
-    ...new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(text),
-  ];
+  const graphemes = [...graphemeSegmenter.segment(text)];
   let normalized = "";
   const owners = [];
   graphemes.forEach(({ segment }, index) => {
@@ -100,7 +101,7 @@ export class FolderPicker {
       this.searchTimer = setTimeout(() => {
         this.query = query;
         this.render();
-      }, 1000);
+      }, 500);
     };
     input.oninput = scheduleSearch;
     // Search the current input after inactivity even while an IME keeps its
@@ -111,9 +112,10 @@ export class FolderPicker {
       this.limit += 50;
       this.render();
     };
-    get("folder-reload").onclick = () => this.loadFolders();
+    get("folder-reload").onclick = () => this.loadFolders(true);
   }
   async load() {
+    const foldersLoading = this.loadFolders();
     let pageError;
     try {
       const [tab] = await this.browser.tabs.query({
@@ -129,16 +131,17 @@ export class FolderPicker {
       pageError = error.message;
     }
     // Folder browsing must also work in a settings tab or on a restricted page.
-    await this.loadFolders();
+    await foldersLoading;
+    this.update(this.state || {}, this.busy);
     if (pageError) this.get("folder-feedback").textContent = pageError;
     this.get("folder-query").focus();
   }
-  async loadFolders() {
+  async loadFolders(refresh = false) {
     this.loading = true;
     this.update(this.state || {}, this.busy);
     this.get("folder-feedback").textContent = "로컬 폴더를 읽는 중…";
     try {
-      const data = await this.rpc("local-folders");
+      const data = await this.rpc("local-folders", { refresh });
       this.folders = data.folders;
       this.recent = data.recent;
       this.limit = 50;
