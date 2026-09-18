@@ -71,6 +71,8 @@ browser.runtime.onMessage.addListener((message, sender) => {
     return undefined;
   const dispatch = async () => {
     switch (message?.type) {
+      case "recent-folders":
+        return engine.listRecentFolders();
       case "local-folders":
         return engine.listLocalFolders(message.refresh === true);
       case "add-bookmark":
@@ -115,6 +117,7 @@ browser.runtime.onMessage.addListener((message, sender) => {
           "diagnose",
           "server-list",
           "local-folders",
+          "recent-folders",
         ].includes(message.type)
       )
         schedule(50);

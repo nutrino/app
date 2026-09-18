@@ -88,6 +88,7 @@ export class FolderPicker {
     this.get = get;
     this.folders = [];
     this.recent = [];
+    this.recentFolders = [];
     this.limit = 50;
     this.query = "";
     const input = get("folder-query");
@@ -100,7 +101,8 @@ export class FolderPicker {
       if (!query) return;
       this.searchTimer = setTimeout(() => {
         this.query = query;
-        this.render();
+        if (this.loaded) this.render();
+        else this.loadFolders();
       }, 500);
     };
     input.oninput = scheduleSearch;
@@ -112,10 +114,14 @@ export class FolderPicker {
       this.limit += 50;
       this.render();
     };
-    get("folder-reload").onclick = () => this.loadFolders(true);
+    get("folder-reload").onclick = () => {
+      this.loaded = false;
+      this.refreshIndex = true;
+      return this.query ? this.loadFolders(true) : this.loadRecent();
+    };
   }
   async load() {
-    const foldersLoading = this.loadFolders();
+    const foldersLoading = this.loadRecent();
     let pageError;
     try {
       const [tab] = await this.browser.tabs.query({
@@ -136,13 +142,30 @@ export class FolderPicker {
     if (pageError) this.get("folder-feedback").textContent = pageError;
     this.get("folder-query").focus();
   }
+  async loadRecent() {
+    try {
+      const data = await this.rpc("recent-folders");
+      this.recentFolders = data.folders;
+      if (!this.loaded) this.recent = data.folders.map((folder) => folder.id);
+      this.recentLoaded = true;
+      this.render();
+    } catch (error) {
+      this.get("folder-feedback").textContent = error.message;
+    }
+  }
   async loadFolders(refresh = false) {
+    if (this.loading) return;
     this.loading = true;
     this.update(this.state || {}, this.busy);
     this.get("folder-feedback").textContent = "로컬 폴더를 읽는 중…";
     try {
-      const data = await this.rpc("local-folders", { refresh });
+      const data = await this.rpc("local-folders", {
+        refresh: refresh || !!this.refreshIndex,
+      });
+      this.refreshIndex = false;
       this.folders = data.folders;
+      this.loaded = true;
+      this.recentLoaded = true;
       this.recent = data.recent;
       this.limit = 50;
       this.get("folder-feedback").textContent =
@@ -181,12 +204,18 @@ export class FolderPicker {
     this.get("folder-results").replaceChildren();
     this.buttons = [];
     this.get("recent-folders").replaceChildren();
-    const byId = new Map(this.folders.map((folder) => [folder.id, folder]));
+    const byId = new Map(
+      [...this.recentFolders, ...this.folders].map((folder) => [
+        folder.id,
+        folder,
+      ]),
+    );
     const recent = this.recent
       .map((id) => byId.get(id))
       .filter(Boolean)
       .slice(0, 10);
-    this.get("recent-folder-empty").hidden = recent.length > 0;
+    this.get("recent-folder-empty").hidden =
+      !this.recentLoaded || recent.length > 0;
     const appendFolder = (folder, list) => {
       const item = document.createElement("li");
       const button = document.createElement("button");

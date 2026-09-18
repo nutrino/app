@@ -1507,3 +1507,44 @@ test("a failed folder index read can be retried", async () => {
   c.bookmarks.getTree = readTree;
   assert.ok((await c.engine.listLocalFolders()).folders.length);
 });
+
+test("recent folders read only ten destinations and shared ancestors, without a full tree or server call", async () => {
+  const c = await setup();
+  for (const root of c.bookmarks.tree.children) root.parentId = "0";
+  const ids = [];
+  for (let i = 0; i < 12; i++) {
+    ids.push(
+      (
+        await c.bookmarks.create({
+          parentId: "toolbar_____",
+          title: `Folder ${i}`,
+        })
+      ).id,
+    );
+  }
+  await c.store.put({ recentBookmarkFolders: ids });
+  c.bookmarks.getTree = async () => {
+    throw Error("must not scan full tree");
+  };
+  const get = c.bookmarks.get.bind(c.bookmarks);
+  const calls = [];
+  c.bookmarks.get = async (id) => {
+    calls.push(id);
+    return get(id);
+  };
+  const recent = await c.engine.listRecentFolders();
+  assert.deepEqual(
+    recent.folders.map((f) => f.id),
+    ids.slice(0, 10),
+  );
+  assert.deepEqual(recent.folders[0].segments, ["Toolbar", "Folder 0"]);
+  assert.equal(calls.length, 12);
+  assert.equal(c.writes(), 0);
+  c.bookmarks.find(ids[0]).unmodifiable = "managed";
+  await c.bookmarks.removeTree(ids[1]);
+  const filtered = await c.engine.listRecentFolders();
+  assert.deepEqual(
+    filtered.folders.map((f) => f.id),
+    ids.slice(2, 10),
+  );
+});

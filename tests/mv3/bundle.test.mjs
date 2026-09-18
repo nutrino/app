@@ -263,6 +263,20 @@ for (const platform of ["firefox", "chromium"])
         async sendMessage(message) {
           messages.push(message);
           if (message.type === "mode") state.mode = message.mode;
+          if (message.type === "recent-folders")
+            return {
+              ok: true,
+              data: {
+                folders: [
+                  {
+                    id: "11",
+                    title: "Travel",
+                    path: "Toolbar » Travel",
+                    segments: ["Toolbar", "Travel"],
+                  },
+                ],
+              },
+            };
           if (message.type === "local-folders")
             return {
               ok: true,
@@ -345,7 +359,17 @@ for (const platform of ["firefox", "chromium"])
       confirm: () => true,
     });
     const flush = () => new Promise((resolve) => setImmediate(resolve));
+    assert.equal(
+      messages.length,
+      0,
+      "shell renders before background requests",
+    );
+    t.mock.timers.tick(0);
     await flush();
+    assert.equal(
+      messages.some((m) => ["local-folders", "server-list"].includes(m.type)),
+      false,
+    );
     assert.equal(get("sync-mode").value, "download");
     assert.equal(get("bookmark-page").textContent, "Current page");
     assert.equal(get("folder-results").children.length, 0);
@@ -359,6 +383,7 @@ for (const platform of ["firefox", "chromium"])
     t.mock.timers.tick(499);
     assert.equal(get("folder-results").children.length, 0);
     t.mock.timers.tick(1);
+    await flush();
     assert.equal(get("folder-results").children.length, 1);
     await get("folder-results").children[0].children[0].onclick();
     const added = messages.find((m) => m.type === "add-bookmark");
@@ -388,6 +413,7 @@ for (const platform of ["firefox", "chromium"])
     t.mock.timers.tick(499);
     assert.equal(get("folder-results").children.length, 0);
     t.mock.timers.tick(1);
+    await flush();
     assert.equal(get("folder-results").children.length, 1);
     get("folder-query").oncompositionend();
     t.mock.timers.tick(500);

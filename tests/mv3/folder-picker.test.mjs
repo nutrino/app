@@ -98,7 +98,7 @@ test("folder loading continues when active page access fails or the settings tab
     };
     const picker = new FolderPicker({ tabs: { query } }, () => {}, get);
     let loaded = false;
-    picker.loadFolders = async () => {
+    picker.loadRecent = async () => {
       loaded = true;
     };
     await picker.load();
@@ -106,4 +106,48 @@ test("folder loading continues when active page access fails or the settings tab
     assert.equal(picker.page, undefined);
     assert.ok(get("folder-feedback").textContent);
   }
+});
+
+test("lazy search shares an in-flight read and does not show results for cleared input", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const elements = new Map();
+  const get = (id) => {
+    if (!elements.has(id)) elements.set(id, { value: "" });
+    return elements.get(id);
+  };
+  let resolve;
+  let calls = 0;
+  const picker = new FolderPicker(
+    {},
+    () => {
+      calls++;
+      return new Promise((done) => {
+        resolve = done;
+      });
+    },
+    get,
+  );
+  let matches = [];
+  picker.render = () => {
+    matches = searchFolders(picker.folders, picker.query);
+  };
+  get("folder-query").oninput();
+  t.mock.timers.tick(500);
+  assert.equal(calls, 0);
+  get("folder-query").value = "work";
+  get("folder-query").oninput();
+  t.mock.timers.tick(499);
+  assert.equal(calls, 0);
+  t.mock.timers.tick(1);
+  assert.equal(calls, 1);
+  get("folder-query").value = "travel";
+  get("folder-query").oninput();
+  t.mock.timers.tick(500);
+  assert.equal(calls, 1);
+  get("folder-query").value = "";
+  get("folder-query").oninput();
+  resolve({ folders: [{ id: "1", path: "Travel" }], recent: [] });
+  await new Promise((done) => setImmediate(done));
+  assert.deepEqual(matches, []);
+  assert.equal(picker.loaded, true);
 });

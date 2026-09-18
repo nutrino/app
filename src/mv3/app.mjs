@@ -354,7 +354,9 @@ $("server-library").ontoggle = () => {
   if ($("server-library").open) {
     libraryOffset = 0;
     libraryParent = null;
-    loadLibrary(true);
+    afterPaint(() => {
+      if ($("server-library").open) loadLibrary(true);
+    });
   }
 };
 let searchTimer;
@@ -374,7 +376,13 @@ async function initialize() {
   ready = true;
   await Promise.all([formLoading, foldersLoading]);
 }
-initialize().catch((error) => notice(error.message, true));
+// Yield a rendering opportunity before any background or bookmark requests.
+function afterPaint(callback) {
+  if (typeof requestAnimationFrame === "function")
+    requestAnimationFrame(() => setTimeout(callback, 0));
+  else setTimeout(callback, 0);
+}
+afterPaint(() => initialize().catch((error) => notice(error.message, true)));
 setInterval(() => {
   if (ready && !busy) refresh().catch((error) => notice(error.message, true));
 }, 1500);

@@ -517,6 +517,53 @@ export class Engine {
   invalidateLocalFolders() {
     this.folderIndex = undefined;
   }
+  async listRecentFolders() {
+    const ids = ((await this.store.get("recentBookmarkFolders")) || []).slice(
+      0,
+      10,
+    );
+    const nodes = new Map();
+    const read = (id) => {
+      if (!nodes.has(id))
+        nodes.set(
+          id,
+          this.native.bookmarks.get(id).then(([node]) => node),
+        );
+      return nodes.get(id);
+    };
+    const folders = await Promise.all(
+      ids.map(async (id) => {
+        try {
+          const segments = [];
+          const seen = new Set();
+          let node = await read(id);
+          while (node && node.parentId !== undefined) {
+            if (
+              seen.has(node.id) ||
+              node.unmodifiable ||
+              node.url !== undefined ||
+              node.type === "separator"
+            )
+              return null;
+            seen.add(node.id);
+            segments.unshift(node.title || "(이름 없는 폴더)");
+            node = await read(node.parentId);
+          }
+          if (!node || !segments.length) return null;
+          return {
+            id,
+            title: segments.at(-1),
+            segments,
+            path: segments.join(" » "),
+          };
+        } catch {
+          // Deleted or unavailable recent destinations must not prevent opening.
+          return null;
+        }
+      }),
+    );
+    return { folders: folders.filter(Boolean) };
+  }
   async listLocalFolders(refresh = false) {
     if (refresh) this.invalidateLocalFolders();
     // Read-only UI requests must not queue behind a network sync/restore.
