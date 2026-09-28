@@ -238,6 +238,9 @@ for (const platform of ["firefox", "chromium"])
       append(child) {
         this.children.push(child);
       },
+      setAttribute(name, value) {
+        this[name] = value;
+      },
     });
     const nodes = new Map(
       [...html.matchAll(/id="([^"]+)"/g)].map((m) => [m[1], element()]),
@@ -283,13 +286,22 @@ for (const platform of ["firefox", "chromium"])
               data: {
                 folders: [
                   {
+                    id: "1",
+                    parentId: null,
+                    title: "Toolbar",
+                    path: "Toolbar",
+                    segments: ["Toolbar"],
+                  },
+                  {
                     id: "10",
+                    parentId: "1",
                     title: "Work",
                     path: "Toolbar » Work",
                     segments: ["Toolbar", "Work"],
                   },
                   {
                     id: "11",
+                    parentId: "1",
                     title: "Travel",
                     path: "Toolbar » Travel",
                     segments: ["Toolbar", "Travel"],
@@ -385,6 +397,19 @@ for (const platform of ["firefox", "chromium"])
     t.mock.timers.tick(1);
     await flush();
     assert.equal(get("folder-results").children.length, 1);
+    get("folder-view-tree").onclick();
+    assert.equal(get("folder-view-tree")["aria-pressed"], "true");
+    assert.equal(get("folder-results").children.length, 1);
+    assert.match(
+      get("folder-results").children[0].textContent,
+      /Toolbar.*Work/,
+    );
+    assert.equal(
+      get("folder-results").children[0].children[0].className,
+      "folder-context",
+    );
+    get("folder-view-list").onclick();
+    assert.equal(get("folder-view-list")["aria-pressed"], "true");
     await get("folder-results").children[0].children[0].onclick();
     const added = messages.find((m) => m.type === "add-bookmark");
     assert.equal(added.data.parentId, "10");

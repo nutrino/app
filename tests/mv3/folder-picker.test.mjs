@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   FolderPicker,
+  folderMatchTree,
   highlightedParts,
   localFolders,
   searchFolders,
@@ -54,6 +55,50 @@ test("folder index searches full paths, keeps duplicate names and excludes unmod
   );
   assert.equal(searchFolders(folders, "nonexistent").length, 0);
   assert.equal(searchFolders(folders, " ").length, 0);
+  assert.equal(folders.find((folder) => folder.id === "3").parentId, "2");
+});
+test("list ranks folder-name matches ahead of ancestor-only matches and tree preserves parents", () => {
+  const folders = [
+    {
+      id: "root",
+      parentId: null,
+      title: "Root",
+      path: "Root",
+      segments: ["Root"],
+    },
+    {
+      id: "ancestor",
+      parentId: "root",
+      title: "Work",
+      path: "Root » Work",
+      segments: ["Root", "Work"],
+    },
+    {
+      id: "child",
+      parentId: "ancestor",
+      title: "Notes",
+      path: "Root » Work » Notes",
+      segments: ["Root", "Work", "Notes"],
+    },
+    {
+      id: "direct",
+      parentId: "root",
+      title: "Work",
+      path: "Root » Work",
+      segments: ["Root", "Work"],
+    },
+  ];
+  assert.deepEqual(
+    searchFolders(folders, "work").map((f) => f.id),
+    ["ancestor", "direct", "child"],
+  );
+  const tree = folderMatchTree(folders, [folders[2]]);
+  assert.equal(tree.length, 1);
+  assert.equal(tree[0].match, false);
+  assert.equal(tree[0].children[0].folder.id, "ancestor");
+  assert.equal(tree[0].children[0].match, false);
+  assert.equal(tree[0].children[0].children[0].folder.id, "child");
+  assert.equal(tree[0].children[0].children[0].match, true);
 });
 test("quick add blocks restore and active server-authoritative sync but permits paused/local workflows", () => {
   assert.match(bookmarkBlock({ applying: true }), /복원 중/);

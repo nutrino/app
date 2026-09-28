@@ -184,6 +184,19 @@ a {
   max-height: 3.1em;
   overflow-y: auto;
 }
+#folder-view {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+#folder-view button {
+  flex: 1;
+  padding: 6px;
+}
+#folder-view button[aria-pressed="true"] {
+  outline: 2px solid #3172c8;
+  outline-offset: -2px;
+}
 #folder-results,
 #recent-folders {
   list-style: none;
@@ -195,6 +208,20 @@ a {
 #folder-results li,
 #recent-folders li {
   margin: 0;
+}
+#folder-results.folder-tree ul {
+  list-style: none;
+  padding-left: 16px;
+  border-left: 1px solid #becadb;
+  margin-left: 8px;
+}
+#folder-results .folder-context {
+  display: block;
+  padding: 5px 8px;
+  overflow-wrap: anywhere;
+}
+#folder-results.folder-tree button {
+  font-weight: 600;
 }
 #folder-results button,
 #recent-folders button {

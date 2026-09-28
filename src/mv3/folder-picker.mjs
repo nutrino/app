@@ -4,7 +4,7 @@ const graphemeSegmenter = new Intl.Segmenter(undefined, {
 });
 export function localFolders(tree) {
   const folders = [];
-  const walk = (nodes, parents = [], blocked = false) => {
+  const walk = (nodes, parents = [], blocked = false, parentId = null) => {
     for (const node of nodes) {
       if (node.url !== undefined || node.type === "separator") continue;
       const path = [...parents, node.title || "(이름 없는 폴더)"];
@@ -12,11 +12,12 @@ export function localFolders(tree) {
       if (!readonly)
         folders.push({
           id: node.id,
+          parentId,
           title: node.title || "(이름 없는 폴더)",
           path: path.join(" » "),
           segments: path,
         });
-      walk(node.children || [], path, readonly);
+      walk(node.children || [], path, readonly, node.id);
     }
   };
   // The synthetic browser root is not a valid bookmark destination.
@@ -34,10 +35,70 @@ export function searchFolders(folders, query) {
     .split(/\s+/)
     .filter(Boolean);
   if (!words.length) return [];
-  return folders.filter((folder) => {
+  const matches = folders.filter((folder) => {
     const path = folder.path.normalize("NFKC").toLocaleLowerCase();
     return words.every((word) => path.includes(word));
   });
+  const rank = (folder) => {
+    const segments = (folder.segments || [folder.path]).map((segment) =>
+      segment.normalize("NFKC").toLocaleLowerCase(),
+    );
+    const name = segments.at(-1);
+    return words.reduce((total, word) => {
+      if (name === word) return total + 100;
+      if (name.startsWith(word)) return total + 80;
+      if (name.includes(word)) return total + 60;
+      if (segments.slice(0, -1).some((part) => part === word))
+        return total + 40;
+      if (segments.slice(0, -1).some((part) => part.startsWith(word)))
+        return total + 30;
+      return total + 20;
+    }, 0);
+  };
+  return matches
+    .map((folder) => ({ folder, score: rank(folder) }))
+    .sort(
+      (a, b) =>
+        b.score - a.score ||
+        folderCollator.compare(a.folder.path, b.folder.path) ||
+        a.folder.id.localeCompare(b.folder.id),
+    )
+    .map(({ folder }) => folder);
+}
+export function folderMatchTree(folders, matches) {
+  const byId = new Map(folders.map((folder) => [folder.id, folder]));
+  const selected = new Set(matches.map((folder) => folder.id));
+  const included = new Set(selected);
+  for (const folder of matches) {
+    let parentId = folder.parentId;
+    const seen = new Set([folder.id]);
+    while (parentId && byId.has(parentId) && !seen.has(parentId)) {
+      seen.add(parentId);
+      included.add(parentId);
+      parentId = byId.get(parentId).parentId;
+    }
+  }
+  const nodes = new Map(
+    [...included].map((id) => [
+      id,
+      { folder: byId.get(id), match: selected.has(id), children: [] },
+    ]),
+  );
+  const roots = [];
+  for (const node of nodes.values()) {
+    const parent = nodes.get(node.folder.parentId);
+    (parent ? parent.children : roots).push(node);
+  }
+  const sort = (siblings) => {
+    siblings.sort(
+      (a, b) =>
+        folderCollator.compare(a.folder.title, b.folder.title) ||
+        a.folder.id.localeCompare(b.folder.id),
+    );
+    for (const node of siblings) sort(node.children);
+  };
+  sort(roots);
+  return roots;
 }
 // Map normalized search matches back to original graphemes (Hangul, fullwidth,
 // combining marks). Render only text nodes, never bookmark names as HTML.
@@ -91,6 +152,12 @@ export class FolderPicker {
     this.recentFolders = [];
     this.limit = 50;
     this.query = "";
+    this.view = "list";
+    for (const view of ["list", "tree"])
+      get(`folder-view-${view}`).onclick = () => {
+        this.view = view;
+        this.render();
+      };
     const input = get("folder-query");
     const scheduleSearch = () => {
       clearTimeout(this.searchTimer);
@@ -196,6 +263,11 @@ export class FolderPicker {
   }
   render() {
     const matches = this.query ? searchFolders(this.folders, this.query) : [];
+    for (const view of ["list", "tree"])
+      this.get(`folder-view-${view}`).setAttribute(
+        "aria-pressed",
+        String(this.view === view),
+      );
     this.get("folder-count").hidden = !this.query;
     this.get("folder-count").textContent = this.query
       ? `${matches.length}개 폴더 검색됨 · ${Math.min(matches.length, this.limit)}개 표시`
@@ -241,8 +313,39 @@ export class FolderPicker {
       this.buttons.push(button);
     };
     for (const folder of recent) appendFolder(folder, "recent-folders");
-    for (const folder of matches.slice(0, this.limit))
-      appendFolder(folder, "folder-results");
+    const visible = matches.slice(0, this.limit);
+    if (this.view === "list") {
+      this.get("folder-results").className = "";
+      for (const folder of visible) appendFolder(folder, "folder-results");
+    } else {
+      this.get("folder-results").className = "folder-tree";
+      const appendBranch = (branch, list) => {
+        const item = document.createElement("li");
+        const label = document.createElement(branch.match ? "button" : "span");
+        label.className = branch.match ? "" : "folder-context";
+        label.textContent = "📁 ";
+        for (const part of highlightedParts(branch.folder.title, this.query)) {
+          const text = document.createElement(part.match ? "mark" : "span");
+          text.textContent = part.text;
+          label.append(text);
+        }
+        if (branch.match) {
+          label.type = "button";
+          label.title = branch.folder.path;
+          label.onclick = () => this.add(branch.folder);
+          this.buttons.push(label);
+        }
+        item.append(label);
+        if (branch.children.length) {
+          const children = document.createElement("ul");
+          for (const child of branch.children) appendBranch(child, children);
+          item.append(children);
+        }
+        list.append(item);
+      };
+      for (const branch of folderMatchTree(this.folders, visible))
+        appendBranch(branch, this.get("folder-results"));
+    }
     this.update(this.state || {}, this.busy);
   }
   async add(folder) {

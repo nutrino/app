@@ -26,6 +26,14 @@
           autocomplete="off"
           aria-controls="folder-results"
         />
+        <div id="folder-view" role="group" aria-label="폴더 검색 결과 보기">
+          <button id="folder-view-list" type="button" aria-pressed="true">
+            일치율순 목록
+          </button>
+          <button id="folder-view-tree" type="button" aria-pressed="false">
+            폴더 트리
+          </button>
+        </div>
         <p id="folder-count" class="hint" role="status"></p>
         <p id="folder-warning" class="hint" hidden></p>
         <ul id="folder-results" aria-label="로컬 북마크 폴더 검색 결과"></ul>
