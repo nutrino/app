@@ -306,6 +306,13 @@ for (const platform of ["firefox", "chromium"])
                     path: "Toolbar » Travel",
                     segments: ["Toolbar", "Travel"],
                   },
+                  {
+                    id: "20",
+                    parentId: "11",
+                    title: "Projects",
+                    path: "Toolbar » Travel » Projects",
+                    segments: ["Toolbar", "Travel", "Projects"],
+                  },
                 ],
                 recent: ["11"],
               },
@@ -405,9 +412,39 @@ for (const platform of ["firefox", "chromium"])
       /Toolbar.*Work/,
     );
     assert.equal(
-      get("folder-results").children[0].children[0].className,
+      get("folder-results").children[0].children[0].children[1].className,
       "folder-context",
     );
+    const root = get("folder-results").children[0];
+    const rootToggle = root.children[0].children[0];
+    assert.equal(rootToggle["aria-expanded"], "true");
+    rootToggle.onclick();
+    assert.equal(rootToggle["aria-expanded"], "false");
+    assert.equal(root.children[1].hidden, true);
+    get("folder-view-list").onclick();
+    get("folder-view-tree").onclick();
+    assert.equal(get("folder-results").children[0].children[1].hidden, true);
+    get("folder-results").children[0].children[0].children[0].onclick();
+    assert.equal(get("folder-results").children[0].children[1].hidden, false);
+    get("folder-query").value = "toolbar";
+    get("folder-query").oninput();
+    t.mock.timers.tick(500);
+    await flush();
+    const expandedRoot = get("folder-results").children[0];
+    const travel = expandedRoot.children[1].children.find((item) =>
+      item.textContent.includes("Travel"),
+    );
+    const travelToggle = travel.children[0].children[0];
+    travelToggle.onclick();
+    assert.equal(travel.children[1].hidden, true);
+    assert.equal(expandedRoot.children[1].hidden, false);
+    expandedRoot.children[0].children[0].onclick();
+    expandedRoot.children[0].children[0].onclick();
+    assert.equal(travel.children[1].hidden, true);
+    get("folder-query").value = "work";
+    get("folder-query").oninput();
+    t.mock.timers.tick(500);
+    await flush();
     get("folder-view-list").onclick();
     assert.equal(get("folder-view-list")["aria-pressed"], "true");
     await get("folder-results").children[0].children[0].onclick();

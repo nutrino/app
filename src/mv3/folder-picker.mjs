@@ -153,6 +153,7 @@ export class FolderPicker {
     this.limit = 50;
     this.query = "";
     this.view = "list";
+    this.collapsedFolders = new Set();
     for (const view of ["list", "tree"])
       get(`folder-view-${view}`).onclick = () => {
         this.view = view;
@@ -163,6 +164,7 @@ export class FolderPicker {
       clearTimeout(this.searchTimer);
       this.query = "";
       this.limit = 50;
+      this.collapsedFolders.clear();
       const query = input.value.trim();
       this.render();
       if (!query) return;
@@ -321,6 +323,38 @@ export class FolderPicker {
       this.get("folder-results").className = "folder-tree";
       const appendBranch = (branch, list) => {
         const item = document.createElement("li");
+        const row = document.createElement("div");
+        row.className = "folder-tree-row";
+        const hasChildren = branch.children.length > 0;
+        const children = hasChildren ? document.createElement("ul") : null;
+        if (hasChildren) {
+          const toggle = document.createElement("button");
+          toggle.type = "button";
+          toggle.className = "folder-toggle";
+          const updateToggle = () => {
+            const collapsed = this.collapsedFolders.has(branch.folder.id);
+            toggle.textContent = collapsed ? "▸" : "▾";
+            toggle.setAttribute("aria-expanded", String(!collapsed));
+            toggle.setAttribute(
+              "aria-label",
+              `${branch.folder.path} ${collapsed ? "펼치기" : "접기"}`,
+            );
+            children.hidden = collapsed;
+          };
+          toggle.onclick = () => {
+            if (this.collapsedFolders.has(branch.folder.id))
+              this.collapsedFolders.delete(branch.folder.id);
+            else this.collapsedFolders.add(branch.folder.id);
+            updateToggle();
+          };
+          updateToggle();
+          row.append(toggle);
+        } else {
+          const spacer = document.createElement("span");
+          spacer.className = "folder-toggle-spacer";
+          spacer.setAttribute("aria-hidden", "true");
+          row.append(spacer);
+        }
         const label = document.createElement(branch.match ? "button" : "span");
         label.className = branch.match ? "" : "folder-context";
         label.textContent = "📁 ";
@@ -335,9 +369,9 @@ export class FolderPicker {
           label.onclick = () => this.add(branch.folder);
           this.buttons.push(label);
         }
-        item.append(label);
-        if (branch.children.length) {
-          const children = document.createElement("ul");
+        row.append(label);
+        item.append(row);
+        if (hasChildren) {
           for (const child of branch.children) appendBranch(child, children);
           item.append(children);
         }

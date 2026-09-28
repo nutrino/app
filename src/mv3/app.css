@@ -215,6 +215,25 @@ a {
   border-left: 1px solid #becadb;
   margin-left: 8px;
 }
+#folder-results .folder-tree-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+}
+#folder-results .folder-tree-row > :last-child {
+  flex: 1;
+  min-width: 0;
+}
+#folder-results.folder-tree .folder-toggle,
+#folder-results .folder-toggle-spacer {
+  flex: none;
+  width: 28px;
+  text-align: center;
+}
+#folder-results.folder-tree .folder-toggle {
+  padding: 4px 0;
+  font-weight: normal;
+}
 #folder-results .folder-context {
   display: block;
   padding: 5px 8px;
