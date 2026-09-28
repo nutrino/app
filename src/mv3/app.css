@@ -232,12 +232,24 @@ a {
 #folder-results.folder-tree .folder-toggle,
 #folder-results .folder-toggle-spacer {
   flex: none;
-  width: 28px;
+  width: 22px;
   text-align: center;
 }
 #folder-results.folder-tree .folder-toggle {
-  padding: 4px 0;
+  height: 22px;
+  padding: 0;
+  margin: 4px 0;
+  font-size: 11px;
+  line-height: 1;
   font-weight: normal;
+}
+#folder-results.folder-tree .folder-toggle[aria-expanded="true"] {
+  background: #245a91;
+  color: white;
+}
+#folder-results.folder-tree .folder-toggle[aria-expanded="false"] {
+  background: #9b4e19;
+  color: white;
 }
 #folder-results .folder-context {
   display: block;

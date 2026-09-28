@@ -455,10 +455,22 @@ for (const platform of ["firefox", "chromium"])
     expandedRoot.children[0].children[0].onclick();
     assert.equal(travel.children[1].hidden, true);
     assert.equal(travel.children[2].hidden, false);
+    travelToggle.onclick();
+    assert.equal(travel.children[1].hidden, false);
+    expandedRoot.children[0].children[0].onclick();
+    assert.deepEqual(
+      expandedRoot.children[2].children.map((item) => item.textContent),
+      ["📁 Toolbar » Travel » Projects", "📁 Toolbar » Work"],
+    );
+    expandedRoot.children[0].children[0].onclick();
+    travelToggle.onclick();
+    expandedRoot.children[0].children[0].onclick();
+    assert.equal(expandedRoot.children[2].children.length, 3);
+    expandedRoot.children[0].children[0].onclick();
     await travel.children[2].children[0].children[0].onclick();
     assert.equal(
-      messages.filter((message) => message.type === "add-bookmark").at(-1)
-        .data.parentId,
+      messages.filter((message) => message.type === "add-bookmark").at(-1).data
+        .parentId,
       "20",
     );
     get("folder-query").value = "work";

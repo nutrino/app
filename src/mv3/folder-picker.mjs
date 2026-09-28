@@ -318,6 +318,7 @@ export class FolderPicker {
       item.append(button);
       (typeof list === "string" ? this.get(list) : list).append(item);
       this.buttons.push(button);
+      return button;
     };
     for (const folder of recent) appendFolder(folder, "recent-folders");
     const visible = matches.slice(0, this.limit);
@@ -347,12 +348,23 @@ export class FolderPicker {
           const children = document.createElement("ul");
           const flat = document.createElement("ul");
           flat.className = "folder-flat-results";
-          let flatBuilt = false;
+          const flatButtons = [];
           const buildFlat = () => {
+            for (const button of flatButtons) {
+              const index = this.buttons.indexOf(button);
+              if (index !== -1) this.buttons.splice(index, 1);
+            }
+            flatButtons.length = 0;
+            flat.replaceChildren();
             const descendants = [];
             const collect = (node) => {
               for (const child of node.children) {
-                if (child.match) descendants.push(child.folder);
+                if (
+                  child.match &&
+                  (!child.children.length ||
+                    this.collapsedFolders.has(child.folder.id))
+                )
+                  descendants.push(child.folder);
                 collect(child);
               }
             };
@@ -360,8 +372,8 @@ export class FolderPicker {
             descendants.sort(
               (a, b) => visibleRank.get(a.id) - visibleRank.get(b.id),
             );
-            for (const folder of descendants) appendFolder(folder, flat);
-            flatBuilt = true;
+            for (const folder of descendants)
+              flatButtons.push(appendFolder(folder, flat));
           };
           const toggle = document.createElement("button");
           toggle.type = "button";
@@ -377,7 +389,7 @@ export class FolderPicker {
             );
             children.hidden = collapsed;
             flat.hidden = !collapsed;
-            if (collapsed && !flatBuilt) buildFlat();
+            if (collapsed) buildFlat();
           };
           toggle.onclick = () => {
             if (this.collapsedFolders.has(branch.folder.id))
