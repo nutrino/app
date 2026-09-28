@@ -290,28 +290,33 @@ export class FolderPicker {
       .slice(0, 10);
     this.get("recent-folder-empty").hidden =
       !this.recentLoaded || recent.length > 0;
-    const appendFolder = (folder, list) => {
-      const item = document.createElement("li");
-      const button = document.createElement("button");
-      button.type = "button";
-      button.textContent = "📁 ";
-      const segments = folder.segments || [folder.path];
+    const fillFolderLabel = (element, folder, fullPath = true) => {
+      element.textContent = "📁 ";
+      const segments = fullPath
+        ? folder.segments || [folder.path]
+        : [folder.title];
       segments.forEach((segment, index) => {
         if (index) {
           const separator = document.createElement("span");
           separator.className = "folder-separator";
           separator.textContent = " » ";
-          button.append(separator);
+          element.append(separator);
         }
         for (const part of highlightedParts(segment, this.query)) {
           const text = document.createElement(part.match ? "mark" : "span");
           text.textContent = part.text;
-          button.append(text);
+          element.append(text);
         }
       });
+    };
+    const appendFolder = (folder, list) => {
+      const item = document.createElement("li");
+      const button = document.createElement("button");
+      button.type = "button";
+      fillFolderLabel(button, folder);
       button.onclick = () => this.add(folder);
       item.append(button);
-      this.get(list).append(item);
+      (typeof list === "string" ? this.get(list) : list).append(item);
       this.buttons.push(button);
     };
     for (const folder of recent) appendFolder(folder, "recent-folders");
@@ -321,18 +326,49 @@ export class FolderPicker {
       for (const folder of visible) appendFolder(folder, "folder-results");
     } else {
       this.get("folder-results").className = "folder-tree";
+      const visibleRank = new Map(
+        visible.map((folder, index) => [folder.id, index]),
+      );
       const appendBranch = (branch, list) => {
         const item = document.createElement("li");
         const row = document.createElement("div");
         row.className = "folder-tree-row";
+        const label = document.createElement(branch.match ? "button" : "span");
+        label.className = branch.match ? "" : "folder-context";
+        fillFolderLabel(label, branch.folder, false);
+        if (branch.match) {
+          label.type = "button";
+          label.title = branch.folder.path;
+          label.onclick = () => this.add(branch.folder);
+          this.buttons.push(label);
+        }
         const hasChildren = branch.children.length > 0;
-        const children = hasChildren ? document.createElement("ul") : null;
         if (hasChildren) {
+          const children = document.createElement("ul");
+          const flat = document.createElement("ul");
+          flat.className = "folder-flat-results";
+          let flatBuilt = false;
+          const buildFlat = () => {
+            const descendants = [];
+            const collect = (node) => {
+              for (const child of node.children) {
+                if (child.match) descendants.push(child.folder);
+                collect(child);
+              }
+            };
+            collect(branch);
+            descendants.sort(
+              (a, b) => visibleRank.get(a.id) - visibleRank.get(b.id),
+            );
+            for (const folder of descendants) appendFolder(folder, flat);
+            flatBuilt = true;
+          };
           const toggle = document.createElement("button");
           toggle.type = "button";
           toggle.className = "folder-toggle";
           const updateToggle = () => {
             const collapsed = this.collapsedFolders.has(branch.folder.id);
+            fillFolderLabel(label, branch.folder, collapsed);
             toggle.textContent = collapsed ? "▸" : "▾";
             toggle.setAttribute("aria-expanded", String(!collapsed));
             toggle.setAttribute(
@@ -340,40 +376,30 @@ export class FolderPicker {
               `${branch.folder.path} ${collapsed ? "펼치기" : "접기"}`,
             );
             children.hidden = collapsed;
+            flat.hidden = !collapsed;
+            if (collapsed && !flatBuilt) buildFlat();
           };
           toggle.onclick = () => {
             if (this.collapsedFolders.has(branch.folder.id))
               this.collapsedFolders.delete(branch.folder.id);
             else this.collapsedFolders.add(branch.folder.id);
             updateToggle();
+            this.update(this.state || {}, this.busy);
           };
-          updateToggle();
           row.append(toggle);
+          row.append(label);
+          item.append(row);
+          for (const child of branch.children) appendBranch(child, children);
+          item.append(children);
+          item.append(flat);
+          updateToggle();
         } else {
           const spacer = document.createElement("span");
           spacer.className = "folder-toggle-spacer";
           spacer.setAttribute("aria-hidden", "true");
           row.append(spacer);
-        }
-        const label = document.createElement(branch.match ? "button" : "span");
-        label.className = branch.match ? "" : "folder-context";
-        label.textContent = "📁 ";
-        for (const part of highlightedParts(branch.folder.title, this.query)) {
-          const text = document.createElement(part.match ? "mark" : "span");
-          text.textContent = part.text;
-          label.append(text);
-        }
-        if (branch.match) {
-          label.type = "button";
-          label.title = branch.folder.path;
-          label.onclick = () => this.add(branch.folder);
-          this.buttons.push(label);
-        }
-        row.append(label);
-        item.append(row);
-        if (hasChildren) {
-          for (const child of branch.children) appendBranch(child, children);
-          item.append(children);
+          row.append(label);
+          item.append(row);
         }
         list.append(item);
       };

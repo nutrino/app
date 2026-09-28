@@ -421,11 +421,17 @@ for (const platform of ["firefox", "chromium"])
     rootToggle.onclick();
     assert.equal(rootToggle["aria-expanded"], "false");
     assert.equal(root.children[1].hidden, true);
+    assert.equal(root.children[2].hidden, false);
+    assert.equal(root.children[2].children.length, 1);
+    assert.match(root.children[0].textContent, /Toolbar/);
+    assert.match(root.children[2].children[0].textContent, /Toolbar.*Work/);
     get("folder-view-list").onclick();
     get("folder-view-tree").onclick();
     assert.equal(get("folder-results").children[0].children[1].hidden, true);
+    assert.equal(get("folder-results").children[0].children[2].hidden, false);
     get("folder-results").children[0].children[0].children[0].onclick();
     assert.equal(get("folder-results").children[0].children[1].hidden, false);
+    assert.equal(get("folder-results").children[0].children[2].hidden, true);
     get("folder-query").value = "toolbar";
     get("folder-query").oninput();
     t.mock.timers.tick(500);
@@ -437,10 +443,24 @@ for (const platform of ["firefox", "chromium"])
     const travelToggle = travel.children[0].children[0];
     travelToggle.onclick();
     assert.equal(travel.children[1].hidden, true);
+    assert.equal(travel.children[2].hidden, false);
+    assert.match(travel.children[0].textContent, /Toolbar.*Travel/);
+    assert.deepEqual(
+      travel.children[2].children.map((item) => item.textContent),
+      ["📁 Toolbar » Travel » Projects"],
+    );
     assert.equal(expandedRoot.children[1].hidden, false);
     expandedRoot.children[0].children[0].onclick();
+    assert.equal(expandedRoot.children[2].children.length, 3);
     expandedRoot.children[0].children[0].onclick();
     assert.equal(travel.children[1].hidden, true);
+    assert.equal(travel.children[2].hidden, false);
+    await travel.children[2].children[0].children[0].onclick();
+    assert.equal(
+      messages.filter((message) => message.type === "add-bookmark").at(-1)
+        .data.parentId,
+      "20",
+    );
     get("folder-query").value = "work";
     get("folder-query").oninput();
     t.mock.timers.tick(500);
@@ -448,7 +468,7 @@ for (const platform of ["firefox", "chromium"])
     get("folder-view-list").onclick();
     assert.equal(get("folder-view-list")["aria-pressed"], "true");
     await get("folder-results").children[0].children[0].onclick();
-    const added = messages.find((m) => m.type === "add-bookmark");
+    const added = messages.filter((m) => m.type === "add-bookmark").at(-1);
     assert.equal(added.data.parentId, "10");
     assert.equal(added.data.url, "https://example.org/current");
     assert.match(get("folder-feedback").textContent, /저장했습니다/);
