@@ -424,7 +424,11 @@ for (const platform of ["firefox", "chromium"])
     assert.equal(root.children[2].hidden, false);
     assert.equal(root.children[2].children.length, 1);
     assert.match(root.children[0].textContent, /Toolbar/);
-    assert.match(root.children[2].children[0].textContent, /Toolbar.*Work/);
+    assert.equal(root.children[2].children[0].textContent, "📁 Work");
+    assert.equal(
+      root.children[2].children[0].children[0].title,
+      "Toolbar » Work",
+    );
     get("folder-view-list").onclick();
     get("folder-view-tree").onclick();
     assert.equal(get("folder-results").children[0].children[1].hidden, true);
@@ -444,10 +448,10 @@ for (const platform of ["firefox", "chromium"])
     travelToggle.onclick();
     assert.equal(travel.children[1].hidden, true);
     assert.equal(travel.children[2].hidden, false);
-    assert.match(travel.children[0].textContent, /Toolbar.*Travel/);
+    assert.equal(travel.children[0].children[1].textContent, "📁 Travel");
     assert.deepEqual(
       travel.children[2].children.map((item) => item.textContent),
-      ["📁 Toolbar » Travel » Projects"],
+      ["📁 Projects"],
     );
     assert.equal(expandedRoot.children[1].hidden, false);
     expandedRoot.children[0].children[0].onclick();
@@ -460,12 +464,22 @@ for (const platform of ["firefox", "chromium"])
     expandedRoot.children[0].children[0].onclick();
     assert.deepEqual(
       expandedRoot.children[2].children.map((item) => item.textContent),
-      ["📁 Toolbar » Travel » Projects", "📁 Toolbar » Work"],
+      ["📁 Projects", "📁 Work"],
     );
     expandedRoot.children[0].children[0].onclick();
     travelToggle.onclick();
     expandedRoot.children[0].children[0].onclick();
     assert.equal(expandedRoot.children[2].children.length, 3);
+    assert.ok(
+      expandedRoot.children[2].children.some(
+        (item) => item.textContent === "📁 Travel » Projects",
+      ),
+    );
+    assert.ok(
+      expandedRoot.children[2].children.every(
+        (item) => !item.textContent.includes("Toolbar"),
+      ),
+    );
     expandedRoot.children[0].children[0].onclick();
     await travel.children[2].children[0].children[0].onclick();
     assert.equal(

@@ -290,11 +290,12 @@ export class FolderPicker {
       .slice(0, 10);
     this.get("recent-folder-empty").hidden =
       !this.recentLoaded || recent.length > 0;
-    const fillFolderLabel = (element, folder, fullPath = true) => {
+    const fillFolderLabel = (
+      element,
+      folder,
+      segments = folder.segments || [folder.path],
+    ) => {
       element.textContent = "📁 ";
-      const segments = fullPath
-        ? folder.segments || [folder.path]
-        : [folder.title];
       segments.forEach((segment, index) => {
         if (index) {
           const separator = document.createElement("span");
@@ -309,11 +310,12 @@ export class FolderPicker {
         }
       });
     };
-    const appendFolder = (folder, list) => {
+    const appendFolder = (folder, list, segments) => {
       const item = document.createElement("li");
       const button = document.createElement("button");
       button.type = "button";
-      fillFolderLabel(button, folder);
+      fillFolderLabel(button, folder, segments);
+      button.title = folder.path;
       button.onclick = () => this.add(folder);
       item.append(button);
       (typeof list === "string" ? this.get(list) : list).append(item);
@@ -336,7 +338,7 @@ export class FolderPicker {
         row.className = "folder-tree-row";
         const label = document.createElement(branch.match ? "button" : "span");
         label.className = branch.match ? "" : "folder-context";
-        fillFolderLabel(label, branch.folder, false);
+        fillFolderLabel(label, branch.folder, [branch.folder.title]);
         if (branch.match) {
           label.type = "button";
           label.title = branch.folder.path;
@@ -357,30 +359,35 @@ export class FolderPicker {
             flatButtons.length = 0;
             flat.replaceChildren();
             const descendants = [];
-            const collect = (node) => {
+            const collect = (node, segments = []) => {
               for (const child of node.children) {
-                if (
-                  child.match &&
-                  (!child.children.length ||
-                    this.collapsedFolders.has(child.folder.id))
-                )
-                  descendants.push(child.folder);
-                collect(child);
+                const include =
+                  !child.children.length ||
+                  this.collapsedFolders.has(child.folder.id);
+                const nextSegments = include
+                  ? [...segments, child.folder.title]
+                  : segments;
+                if (child.match && include)
+                  descendants.push({
+                    folder: child.folder,
+                    segments: nextSegments,
+                  });
+                collect(child, nextSegments);
               }
             };
             collect(branch);
             descendants.sort(
-              (a, b) => visibleRank.get(a.id) - visibleRank.get(b.id),
+              (a, b) =>
+                visibleRank.get(a.folder.id) - visibleRank.get(b.folder.id),
             );
-            for (const folder of descendants)
-              flatButtons.push(appendFolder(folder, flat));
+            for (const { folder, segments } of descendants)
+              flatButtons.push(appendFolder(folder, flat, segments));
           };
           const toggle = document.createElement("button");
           toggle.type = "button";
           toggle.className = "folder-toggle";
           const updateToggle = () => {
             const collapsed = this.collapsedFolders.has(branch.folder.id);
-            fillFolderLabel(label, branch.folder, collapsed);
             toggle.textContent = collapsed ? "▸" : "▾";
             toggle.setAttribute("aria-expanded", String(!collapsed));
             toggle.setAttribute(
