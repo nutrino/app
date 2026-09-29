@@ -79,6 +79,23 @@ export function searchFolders(folders, query) {
 export function collapsedFolderSegments(branch, folder) {
   return folder.segments.slice(branch.segments.length);
 }
+export function collapsedFolderResults(branch, matches) {
+  const rank = new Map(matches.map((folder, index) => [folder.id, index]));
+  const results = [];
+  const collect = (node) => {
+    for (const child of node.children) {
+      // A matching folder remains a result even when it has matching children.
+      if (child.match)
+        results.push({
+          folder: child.folder,
+          segments: collapsedFolderSegments(branch.folder, child.folder),
+        });
+      collect(child);
+    }
+  };
+  collect(branch);
+  return results.sort((a, b) => rank.get(a.folder.id) - rank.get(b.folder.id));
+}
 export function folderMatchTree(folders, matches) {
   const byId = new Map(folders.map((folder) => [folder.id, folder]));
   const selected = new Set(matches.map((folder) => folder.id));
@@ -343,9 +360,6 @@ export class FolderPicker {
       for (const folder of visible) appendFolder(folder, "folder-results");
     } else {
       this.get("folder-results").className = "folder-tree";
-      const visibleRank = new Map(
-        visible.map((folder, index) => [folder.id, index]),
-      );
       const appendBranch = (branch, list) => {
         const item = document.createElement("li");
         const row = document.createElement("div");
@@ -372,29 +386,10 @@ export class FolderPicker {
             }
             flatButtons.length = 0;
             flat.replaceChildren();
-            const descendants = [];
-            const collect = (node) => {
-              for (const child of node.children) {
-                const include =
-                  !child.children.length ||
-                  this.collapsedFolders.has(child.folder.id);
-                if (child.match && include)
-                  descendants.push({
-                    folder: child.folder,
-                    segments: collapsedFolderSegments(
-                      branch.folder,
-                      child.folder,
-                    ),
-                  });
-                collect(child);
-              }
-            };
-            collect(branch);
-            descendants.sort(
-              (a, b) =>
-                visibleRank.get(a.folder.id) - visibleRank.get(b.folder.id),
-            );
-            for (const { folder, segments } of descendants)
+            for (const { folder, segments } of collapsedFolderResults(
+              branch,
+              visible,
+            ))
               flatButtons.push(appendFolder(folder, flat, segments));
           };
           const toggle = document.createElement("button");

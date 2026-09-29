@@ -462,9 +462,12 @@ for (const platform of ["firefox", "chromium"])
     travelToggle.onclick();
     assert.equal(travel.children[1].hidden, false);
     expandedRoot.children[0].children[0].onclick();
+    assert.equal(expandedRoot.children[2].children.length, 3);
     assert.deepEqual(
-      expandedRoot.children[2].children.map((item) => item.textContent),
-      ["Travel » Projects", "Work"],
+      new Set(
+        expandedRoot.children[2].children.map((item) => item.textContent),
+      ),
+      new Set(["Travel", "Travel » Projects", "Work"]),
     );
     expandedRoot.children[0].children[0].onclick();
     travelToggle.onclick();

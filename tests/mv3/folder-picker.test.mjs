@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   FolderPicker,
   collapsedFolderSegments,
+  collapsedFolderResults,
   folderMatchTree,
   highlightedParts,
   localFolders,
@@ -85,6 +86,36 @@ test("collapsed paths start after the collapsed folder and keep descendant names
     "한국어/다국어 특화 Embedding 모형",
     "BGE-M3 (baai general embedding model)",
   ]);
+});
+test("collapsed folder results retain a matching DDS parent and each matching child", () => {
+  const folders = [];
+  const add = (id, parentId, title) => {
+    const parent = folders.find((folder) => folder.id === parentId);
+    const segments = parent ? [...parent.segments, title] : [title];
+    folders.push({ id, parentId, title, segments, path: segments.join(" » ") });
+  };
+  add("root", null, "기타 북마크");
+  add("mom", "root", "메시지 / MOM");
+  add("dds", "mom", "DDS");
+  add("vs", "mom", "DDS vs AMQP");
+  add("open", "dds", "OpenDDS");
+  add("splice", "dds", "OpenSpliceDDS");
+  const matches = searchFolders(folders, "DDS");
+  assert.deepEqual(
+    new Set(matches.map((folder) => folder.id)),
+    new Set(["dds", "vs", "open", "splice"]),
+  );
+  const tree = folderMatchTree(folders, matches);
+  const collapsed = collapsedFolderResults(tree[0], matches);
+  assert.equal(collapsed.length, 4);
+  assert.deepEqual(
+    new Set(collapsed.map(({ folder }) => folder.id)),
+    new Set(["dds", "vs", "open", "splice"]),
+  );
+  assert.deepEqual(
+    collapsed.find(({ folder }) => folder.id === "dds").segments,
+    ["메시지 / MOM", "DDS"],
+  );
 });
 test("local Other root is displayed as 기타 북마크 without renaming nested folders", () => {
   const folders = localFolders([
