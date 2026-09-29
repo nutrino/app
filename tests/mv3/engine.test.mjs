@@ -1548,3 +1548,14 @@ test("recent folders read only ten destinations and shared ancestors, without a 
     ids.slice(2, 10),
   );
 });
+test("recent Edge folders display the Other root as 기타 북마크 without changing native bookmarks", async () => {
+  const c = await setup(false);
+  const other = c.bookmarks.find("2");
+  other.title = "다른 즐겨찾기";
+  other.parentId = "0";
+  const folder = await c.bookmarks.create({ parentId: "2", title: "업무" });
+  await c.store.put({ recentBookmarkFolders: [folder.id] });
+  const recent = await c.engine.listRecentFolders();
+  assert.deepEqual(recent.folders[0].segments, ["기타 북마크", "업무"]);
+  assert.equal(other.title, "다른 즐겨찾기");
+});

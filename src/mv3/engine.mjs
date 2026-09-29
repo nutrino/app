@@ -13,7 +13,11 @@ import {
   validateTree,
 } from "./protocol.mjs";
 import { mergeInitial, serverPage } from "./server-library.mjs";
-import { localFolders, bookmarkBlock } from "./folder-picker.mjs";
+import {
+  localFolders,
+  bookmarkBlock,
+  displayFolderTitle,
+} from "./folder-picker.mjs";
 const MODES = ["download", "upload", "both"];
 const readTree = (remote, key) =>
   remote.bookmarks === "" ? validateTree([]) : decrypt(remote.bookmarks, key);
@@ -546,8 +550,11 @@ export class Engine {
             )
               return null;
             seen.add(node.id);
-            segments.unshift(node.title || "(이름 없는 폴더)");
-            node = await read(node.parentId);
+            const parent = await read(node.parentId);
+            segments.unshift(
+              displayFolderTitle(node, parent?.parentId === undefined),
+            );
+            node = parent;
           }
           if (!node || !segments.length) return null;
           return {

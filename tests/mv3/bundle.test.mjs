@@ -424,7 +424,7 @@ for (const platform of ["firefox", "chromium"])
     assert.equal(root.children[2].hidden, false);
     assert.equal(root.children[2].children.length, 1);
     assert.match(root.children[0].textContent, /Toolbar/);
-    assert.equal(root.children[2].children[0].textContent, "📁 Work");
+    assert.equal(root.children[2].children[0].textContent, "📁 Toolbar » Work");
     assert.equal(
       root.children[2].children[0].children[0].title,
       "Toolbar » Work",
@@ -451,7 +451,7 @@ for (const platform of ["firefox", "chromium"])
     assert.equal(travel.children[0].children[1].textContent, "📁 Travel");
     assert.deepEqual(
       travel.children[2].children.map((item) => item.textContent),
-      ["📁 Projects"],
+      ["📁 Travel » Projects"],
     );
     assert.equal(expandedRoot.children[1].hidden, false);
     expandedRoot.children[0].children[0].onclick();
@@ -464,7 +464,7 @@ for (const platform of ["firefox", "chromium"])
     expandedRoot.children[0].children[0].onclick();
     assert.deepEqual(
       expandedRoot.children[2].children.map((item) => item.textContent),
-      ["📁 Projects", "📁 Work"],
+      ["📁 Toolbar » Travel » Projects", "📁 Toolbar » Work"],
     );
     expandedRoot.children[0].children[0].onclick();
     travelToggle.onclick();
@@ -472,12 +472,7 @@ for (const platform of ["firefox", "chromium"])
     assert.equal(expandedRoot.children[2].children.length, 3);
     assert.ok(
       expandedRoot.children[2].children.some(
-        (item) => item.textContent === "📁 Travel » Projects",
-      ),
-    );
-    assert.ok(
-      expandedRoot.children[2].children.every(
-        (item) => !item.textContent.includes("Toolbar"),
+        (item) => item.textContent === "📁 Toolbar » Travel » Projects",
       ),
     );
     expandedRoot.children[0].children[0].onclick();

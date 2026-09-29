@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   FolderPicker,
+  collapsedFolderSegments,
   folderMatchTree,
   highlightedParts,
   localFolders,
@@ -56,6 +57,42 @@ test("folder index searches full paths, keeps duplicate names and excludes unmod
   assert.equal(searchFolders(folders, "nonexistent").length, 0);
   assert.equal(searchFolders(folders, " ").length, 0);
   assert.equal(folders.find((folder) => folder.id === "3").parentId, "2");
+});
+test("collapsed paths start at the collapsed folder and keep descendant names", () => {
+  const parent = [
+    "기타 북마크",
+    "생성(generative) AI",
+    "생성 AI 활용",
+    "자연언어처리 on Deep Learning",
+    "NN for 자연언어처리",
+    "Attention Mechanism / Transformer",
+    "Transformer 기반 NLP 모형",
+  ];
+  const branch = { segments: parent };
+  const child = { segments: [...parent, "Text Embedding on Transformer"] };
+  assert.deepEqual(collapsedFolderSegments(branch, child), [
+    "Transformer 기반 NLP 모형",
+    "Text Embedding on Transformer",
+  ]);
+});
+test("local Other root is displayed as 기타 북마크 without renaming nested folders", () => {
+  const folders = localFolders([
+    {
+      id: "0",
+      children: [
+        {
+          id: "2",
+          title: "다른 즐겨찾기",
+          folderType: "other",
+          children: [{ id: "3", title: "다른 즐겨찾기", children: [] }],
+        },
+      ],
+    },
+  ]);
+  assert.deepEqual(
+    folders.map((folder) => folder.path),
+    ["기타 북마크", "기타 북마크 » 다른 즐겨찾기"],
+  );
 });
 test("list ranks folder-name matches ahead of ancestor-only matches and tree preserves parents", () => {
   const folders = [

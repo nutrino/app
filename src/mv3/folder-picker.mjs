@@ -2,18 +2,29 @@ const folderCollator = new Intl.Collator("ko", { numeric: true });
 const graphemeSegmenter = new Intl.Segmenter(undefined, {
   granularity: "grapheme",
 });
+export function displayFolderTitle(node, isRoot = false) {
+  if (
+    isRoot &&
+    (node.id === "unfiled_____" ||
+      node.id === "2" ||
+      node.folderType === "other")
+  )
+    return "기타 북마크";
+  return node.title || "(이름 없는 폴더)";
+}
 export function localFolders(tree) {
   const folders = [];
   const walk = (nodes, parents = [], blocked = false, parentId = null) => {
     for (const node of nodes) {
       if (node.url !== undefined || node.type === "separator") continue;
-      const path = [...parents, node.title || "(이름 없는 폴더)"];
+      const title = displayFolderTitle(node, parentId === null);
+      const path = [...parents, title];
       const readonly = blocked || !!node.unmodifiable;
       if (!readonly)
         folders.push({
           id: node.id,
           parentId,
-          title: node.title || "(이름 없는 폴더)",
+          title,
           path: path.join(" » "),
           segments: path,
         });
@@ -64,6 +75,9 @@ export function searchFolders(folders, query) {
         a.folder.id.localeCompare(b.folder.id),
     )
     .map(({ folder }) => folder);
+}
+export function collapsedFolderSegments(branch, folder) {
+  return folder.segments.slice(branch.segments.length - 1);
 }
 export function folderMatchTree(folders, matches) {
   const byId = new Map(folders.map((folder) => [folder.id, folder]));
@@ -359,20 +373,20 @@ export class FolderPicker {
             flatButtons.length = 0;
             flat.replaceChildren();
             const descendants = [];
-            const collect = (node, segments = []) => {
+            const collect = (node) => {
               for (const child of node.children) {
                 const include =
                   !child.children.length ||
                   this.collapsedFolders.has(child.folder.id);
-                const nextSegments = include
-                  ? [...segments, child.folder.title]
-                  : segments;
                 if (child.match && include)
                   descendants.push({
                     folder: child.folder,
-                    segments: nextSegments,
+                    segments: collapsedFolderSegments(
+                      branch.folder,
+                      child.folder,
+                    ),
                   });
-                collect(child, nextSegments);
+                collect(child);
               }
             };
             collect(branch);
