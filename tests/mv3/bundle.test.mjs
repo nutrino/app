@@ -211,6 +211,10 @@ for (const platform of ["firefox", "chromium"])
     t.mock.timers.enable({ apis: ["setTimeout"] });
     const directory = `build/mv3/${platform}`;
     const html = fs.readFileSync(`${directory}/app.html`, "utf8");
+    assert.match(
+      html,
+      /id="build-info"[\s\S]*?<\/section>\s*<p id="restore-state"/,
+    );
     const build = JSON.parse(
       fs.readFileSync(`${directory}/build-info.json`, "utf8"),
     );
@@ -358,6 +362,7 @@ for (const platform of ["firefox", "chromium"])
       storage: { local: storage, session: storage },
       permissions: { contains: async () => true },
     };
+    let refreshTimer;
     vm.runInNewContext(fs.readFileSync(`${directory}/app.js`, "utf8"), {
       browser: api,
       chrome: api,
@@ -372,7 +377,9 @@ for (const platform of ["firefox", "chromium"])
         createElement: element,
       },
       location: { search: "" },
-      setInterval() {},
+      setInterval(callback) {
+        refreshTimer = callback;
+      },
       setTimeout,
       clearTimeout,
       confirm: () => true,
@@ -385,6 +392,9 @@ for (const platform of ["firefox", "chromium"])
     );
     t.mock.timers.tick(0);
     await flush();
+    assert.equal(get("build-match").textContent, "화면·실행부 일치");
+    assert.match(get("ui-build").textContent, /^화면·실행부 · 소스 최종 커밋:/);
+    assert.equal(get("runtime-build").hidden, true);
     assert.equal(
       messages.some((m) => ["local-folders", "server-list"].includes(m.type)),
       false,
@@ -554,4 +564,11 @@ for (const platform of ["firefox", "chromium"])
       messages.some((m) => ["restore", "sync"].includes(m.type)),
       false,
     );
+    state.build = { ...build, builtAt: "2026-09-01T00:00:00Z" };
+    refreshTimer();
+    await flush();
+    assert.match(get("build-match").textContent, /빌드 불일치/);
+    assert.match(get("ui-build").textContent, /^화면 · 소스 최종 커밋:/);
+    assert.match(get("runtime-build").textContent, /^실행부 · 소스 최종 커밋:/);
+    assert.equal(get("runtime-build").hidden, false);
   });

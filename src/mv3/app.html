@@ -54,11 +54,14 @@
       <button id="open-setup" hidden>서버 연결 설정 열기</button>
       <p id="notice" role="status" aria-live="polite">실행부에 연결 중…</p>
       <section id="build-info" aria-label="설치된 빌드 정보">
+        <div id="build-info-heading">
+          <strong>설치된 빌드</strong>
+          <span id="build-match" role="status">실행부 확인 중…</span>
+        </div>
         <p id="ui-build"></p>
-        <p id="runtime-build">실행부 빌드 확인 중…</p>
-        <p id="build-match" role="status"></p>
-        <p id="restore-state"></p>
+        <p id="runtime-build" hidden></p>
       </section>
+      <p id="restore-state"></p>
       <section id="login" hidden>
         <form id="connect" autocomplete="off">
           <label

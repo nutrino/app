@@ -41,14 +41,17 @@ function notice(text, error = false) {
 }
 async function refresh(nextState) {
   state = nextState || (await rpc("status"));
-  $("runtime-build").textContent = "실행부 · " + describeBuild(state.build);
-  $("build-match").textContent = sameBuild(BUILD_INFO, state.build)
-    ? "화면과 실행부가 같은 빌드입니다."
-    : "화면과 실행부의 빌드가 다르거나 확인되지 않습니다. 확장을 다시 로드하고 화면을 다시 여세요.";
-  $("build-match").classList.toggle(
-    "error",
-    !sameBuild(BUILD_INFO, state.build),
-  );
+  const matched = sameBuild(BUILD_INFO, state.build);
+  $("ui-build").textContent =
+    `${matched ? "화면·실행부" : "화면"} · ${describeBuild(BUILD_INFO)}`;
+  $("runtime-build").hidden = matched;
+  $("runtime-build").textContent = matched
+    ? ""
+    : "실행부 · " + describeBuild(state.build);
+  $("build-match").textContent = matched
+    ? "화면·실행부 일치"
+    : "빌드 불일치 · 확장을 다시 로드하고 화면을 다시 여세요.";
+  $("build-match").classList.toggle("error", !matched);
   $("restore-state").textContent = state.restoreState
     ? `복원 단계: ${state.restoreState.phase} · ${state.enabled ? "실행 중" : "정지"} · 생성 ${state.restoreState.cursor}/${state.restoreState.total} · 순서 조정 ${state.restoreState.passes}회 / 이동 ${state.restoreState.moves}회`
     : "진행 중인 복원 없음";

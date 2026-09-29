@@ -40,13 +40,33 @@ section {
   margin: 12px 0;
 }
 #build-info {
+  padding: 7px 9px;
+  border: 1px solid #becadb;
+  border-radius: 6px;
+  background: #eef2f8;
   font-size: 12px;
   overflow-wrap: anywhere;
+}
+#build-info-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+#build-info p {
+  margin: 2px 0 0;
+  line-height: 1.35;
   white-space: pre-line;
+}
+#build-match {
+  color: #536478;
+  text-align: right;
 }
 #build-match.error {
   color: #b3261e;
   font-weight: 600;
+}
+#restore-state {
+  margin: 6px 0;
 }
 fieldset {
   border: 0;
@@ -170,6 +190,16 @@ a {
   }
   #notice {
     background: #263f5c;
+  }
+  #build-info {
+    background: #263449;
+    border-color: #52637a;
+  }
+  #build-match {
+    color: #b7c4d6;
+  }
+  #build-match.error {
+    color: #ffb4a4;
   }
   a {
     color: #90caff;
