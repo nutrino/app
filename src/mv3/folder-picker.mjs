@@ -77,7 +77,7 @@ export function searchFolders(folders, query) {
     .map(({ folder }) => folder);
 }
 export function collapsedFolderSegments(branch, folder) {
-  return folder.segments.slice(branch.segments.length - 1);
+  return folder.segments.slice(branch.segments.length);
 }
 export function folderMatchTree(folders, matches) {
   const byId = new Map(folders.map((folder) => [folder.id, folder]));
@@ -309,7 +309,7 @@ export class FolderPicker {
       folder,
       segments = folder.segments || [folder.path],
     ) => {
-      element.textContent = "📁 ";
+      element.textContent = "";
       segments.forEach((segment, index) => {
         if (index) {
           const separator = document.createElement("span");

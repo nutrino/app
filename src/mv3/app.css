@@ -1,7 +1,7 @@
 :root {
   color-scheme: light dark;
   font:
-    14px/1.55 system-ui,
+    14px/1.45 system-ui,
     sans-serif;
   background: #f4f6fa;
   color: #202d40;
@@ -17,8 +17,8 @@ body {
 header {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 20px;
+  gap: 8px;
+  padding: 12px;
   background: #193555;
   color: white;
 }
@@ -34,10 +34,10 @@ header button {
   width: 36px;
 }
 main {
-  padding: 20px;
+  padding: 12px;
 }
 section {
-  margin: 16px 0;
+  margin: 12px 0;
 }
 #build-info {
   font-size: 12px;
@@ -56,7 +56,7 @@ fieldset {
 }
 label {
   display: block;
-  margin: 12px 0;
+  margin: 8px 0;
   font-weight: 600;
 }
 input {
@@ -126,7 +126,7 @@ progress {
 }
 details {
   border-top: 1px solid #becadb;
-  padding: 14px 0;
+  padding: 10px 0;
 }
 summary {
   cursor: pointer;
@@ -186,12 +186,12 @@ a {
 }
 #folder-view {
   display: flex;
-  gap: 6px;
-  margin-top: 8px;
+  gap: 4px;
+  margin-top: 6px;
 }
 #folder-view button {
   flex: 1;
-  padding: 6px;
+  padding: 5px;
 }
 #folder-view button[aria-pressed="true"] {
   outline: 2px solid #3172c8;
@@ -201,7 +201,7 @@ a {
 #recent-folders {
   list-style: none;
   padding: 0;
-  margin: 8px 0;
+  margin: 4px 0;
   max-height: 250px;
   overflow-y: auto;
 }
@@ -211,19 +211,19 @@ a {
 }
 #folder-results.folder-tree ul {
   list-style: none;
-  padding-left: 16px;
+  padding-left: 10px;
   border-left: 1px solid #becadb;
-  margin-left: 8px;
+  margin-left: 4px;
 }
 #folder-results.folder-tree ul.folder-flat-results {
-  padding-left: 32px;
+  padding-left: 20px;
   margin-left: 0;
   border-left: 0;
 }
 #folder-results .folder-tree-row {
   display: flex;
   align-items: flex-start;
-  gap: 4px;
+  gap: 2px;
 }
 #folder-results .folder-tree-row > :last-child {
   flex: 1;
@@ -232,14 +232,14 @@ a {
 #folder-results.folder-tree .folder-toggle,
 #folder-results .folder-toggle-spacer {
   flex: none;
-  width: 22px;
+  width: 18px;
   text-align: center;
 }
 #folder-results.folder-tree .folder-toggle {
-  height: 22px;
+  height: 18px;
   padding: 0;
-  margin: 4px 0;
-  font-size: 11px;
+  margin: 2px 0;
+  font-size: 10px;
   line-height: 1;
   font-weight: normal;
 }
@@ -253,7 +253,7 @@ a {
 }
 #folder-results .folder-context {
   display: block;
-  padding: 5px 8px;
+  padding: 3px 4px;
   overflow-wrap: anywhere;
 }
 #folder-results.folder-tree button {
@@ -263,7 +263,8 @@ a {
 #recent-folders button {
   width: 100%;
   text-align: left;
-  margin: 2px 0;
+  padding: 4px 6px;
+  margin: 1px 0;
   overflow-wrap: anywhere;
 }
 #folder-warning {
@@ -277,7 +278,7 @@ a {
 
 .folder-separator {
   font-size: 0.8em;
-  margin-inline: 0.3em;
+  margin-inline: 0.15em;
   opacity: 0.85;
 }
 #quick-bookmark mark {

@@ -291,7 +291,7 @@ async function loadLibrary(refreshServer = false) {
       const item = document.createElement("li");
       if (node.folder) {
         const button = document.createElement("button");
-        button.textContent = `📁 ${node.title} (${node.count})`;
+        button.textContent = `${node.title} (${node.count})`;
         button.onclick = () => {
           libraryParent = node.id;
           libraryOffset = 0;

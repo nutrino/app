@@ -58,7 +58,7 @@ test("folder index searches full paths, keeps duplicate names and excludes unmod
   assert.equal(searchFolders(folders, " ").length, 0);
   assert.equal(folders.find((folder) => folder.id === "3").parentId, "2");
 });
-test("collapsed paths start at the collapsed folder and keep descendant names", () => {
+test("collapsed paths start after the collapsed folder and keep descendant names", () => {
   const parent = [
     "기타 북마크",
     "생성(generative) AI",
@@ -67,12 +67,23 @@ test("collapsed paths start at the collapsed folder and keep descendant names", 
     "NN for 자연언어처리",
     "Attention Mechanism / Transformer",
     "Transformer 기반 NLP 모형",
+    "Text Embedding on Transformer",
   ];
   const branch = { segments: parent };
-  const child = { segments: [...parent, "Text Embedding on Transformer"] };
+  const child = {
+    segments: [
+      ...parent,
+      "SentenceTransformers / SBERT (sentence embedding)",
+      "SBERT 기반 Text Embedding 모형",
+      "한국어/다국어 특화 Embedding 모형",
+      "BGE-M3 (baai general embedding model)",
+    ],
+  };
   assert.deepEqual(collapsedFolderSegments(branch, child), [
-    "Transformer 기반 NLP 모형",
-    "Text Embedding on Transformer",
+    "SentenceTransformers / SBERT (sentence embedding)",
+    "SBERT 기반 Text Embedding 모형",
+    "한국어/다국어 특화 Embedding 모형",
+    "BGE-M3 (baai general embedding model)",
   ]);
 });
 test("local Other root is displayed as 기타 북마크 without renaming nested folders", () => {
