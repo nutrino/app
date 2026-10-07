@@ -1,6 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { serverPage, mergeInitial } from "../../src/mv3/server-library.mjs";
+import {
+  appendServerHistory,
+  serverHistoryPage,
+} from "../../src/mv3/server-history.mjs";
 import { ROOTS, SEPARATOR, validateTree } from "../../src/mv3/protocol.mjs";
 const tree = (children) => validateTree([{ id: 0, title: ROOTS[0], children }]);
 test("recent server pages preserve data and sort IDs across folders", () => {
@@ -95,4 +99,88 @@ test("initial merge matches duplicate bookmarks one-to-one and preserves both in
   assert.equal(children[2].children.length, 1);
   assert.deepEqual([server, local], originals);
   assert.deepEqual(mergeInitial(merged, local), merged);
+});
+
+test("server history records additions, edits and deletions without inventing past events", () => {
+  const before = tree([
+    { id: 4, title: "Delete me", url: "https://old.example/" },
+    { id: 5, title: "Edit me", url: "https://before.example/" },
+  ]);
+  const after = tree([
+    { id: 5, title: "Renamed", url: "https://after.example/" },
+    { id: 6, title: "Added", url: "https://new.example/" },
+  ]);
+  const revision = "2026-10-07T00:00:00.000Z";
+  assert.deepEqual(
+    appendServerHistory([], null, after, revision, "서버에서 확인"),
+    [],
+  );
+  const history = appendServerHistory(
+    [],
+    before,
+    after,
+    revision,
+    "서버에서 확인",
+  );
+  assert.deepEqual(history[0].counts, { added: 1, changed: 1, deleted: 1 });
+  assert.deepEqual(
+    history[0].items.map((item) => [item.kind, item.id]),
+    [
+      ["deleted", 4],
+      ["changed", 5],
+      ["added", 6],
+    ],
+  );
+  assert.deepEqual(history[0].items[1].fields, ["제목", "주소"]);
+  assert.deepEqual(history[0].items[1].details, [
+    "제목: Edit me → Renamed",
+    "주소: https://before.example/ → https://after.example/",
+  ]);
+  assert.match(history[0].items[0].path, /북마크 도구 모음 » Delete me/);
+  assert.equal(
+    appendServerHistory(history, before, after, revision, "서버에서 확인"),
+    history,
+  );
+  assert.equal(serverHistoryPage(history).total, 3);
+  assert.deepEqual(
+    serverHistoryPage(history, { query: "after.example" }).items.map(
+      (item) => item.id,
+    ),
+    [5],
+  );
+  assert.deepEqual(
+    serverHistoryPage(history, { query: "before.example" }).items.map(
+      (item) => item.id,
+    ),
+    [5],
+  );
+  assert.equal(serverHistoryPage(history, { offset: 2 }).items[0].id, 6);
+  assert.deepEqual(
+    before[0].children.map((node) => node.id),
+    [4, 5],
+  );
+});
+
+test("large server revisions retain accurate counts and a bounded deletion-first sample", () => {
+  const before = tree([
+    { id: 4, title: "Removed", url: "https://old.example/" },
+  ]);
+  const after = tree(
+    Array.from({ length: 150 }, (_, i) => ({
+      id: i + 10,
+      title: `Added ${i}`,
+      url: `https://new.example/${i}`,
+    })),
+  );
+  const history = appendServerHistory(
+    [],
+    before,
+    after,
+    "2026-10-07T00:00:00.000Z",
+    "서버에서 확인",
+  );
+  assert.deepEqual(history[0].counts, { added: 150, changed: 0, deleted: 1 });
+  assert.equal(history[0].items.length, 100);
+  assert.equal(history[0].items[0].title, "Removed");
+  assert.equal(serverHistoryPage(history, { offset: 90 }).items.length, 10);
 });

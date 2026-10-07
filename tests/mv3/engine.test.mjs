@@ -235,6 +235,101 @@ for (const firefox of [true, false])
     assert.equal(uploaded[0].children[0].children[0].title, "Edited");
     assert.deepEqual(uploaded[0].children[0].children[0].tags, ["tag"]);
   });
+for (const firefox of [true, false])
+  test(`${firefox ? "Firefox" : "Chromium"} local deletion reaches server and enters history`, async () => {
+    const c = await setup(firefox);
+    await restore(c);
+    const added = await c.bookmarks.create({
+      parentId: firefox ? "toolbar_____" : "1",
+      title: "To remove",
+      url: "https://delete.example/",
+    });
+    await c.engine.tick();
+    assert.equal(c.writes(), 1);
+    assert.ok(
+      (await decrypt(c.server.bookmarks, key))[0].children.some(
+        (node) => node.url === "https://delete.example/",
+      ),
+    );
+    await c.bookmarks.removeTree(added.id);
+    await c.engine.tick();
+    assert.equal(c.writes(), 2);
+    assert.equal(
+      (await decrypt(c.server.bookmarks, key))[0].children.some(
+        (node) => node.url === "https://delete.example/",
+      ),
+      false,
+    );
+    const history = await c.engine.listServerHistory();
+    assert.deepEqual(
+      history.items.slice(0, 2).map((item) => item.kind),
+      ["deleted", "added"],
+    );
+    assert.equal(history.items[0].title, "To remove");
+    const restarted = new Engine(c.store, c.native, () => c.api);
+    assert.equal((await restarted.listServerHistory()).total, history.total);
+  });
+
+test("server-authoritative mode restores a local deletion without logging a server deletion", async () => {
+  const c = await setup();
+  await restore(c);
+  await c.engine.setMode("download");
+  const nativeId = Object.entries(await c.store.get("mapping")).find(
+    ([, id]) => id === 4,
+  )[0];
+  await c.bookmarks.removeTree(nativeId);
+  await c.engine.tick();
+  await c.engine.tick();
+  assert.equal(c.writes(), 0);
+  assert.equal((await c.engine.listServerHistory()).total, 0);
+  assert.ok(
+    (
+      await c.native.snapshot(
+        await c.store.get("base"),
+        await c.store.get("mapping"),
+      )
+    ).tree[0].children[0].children.some((node) => node.id === 4),
+  );
+});
+test("local-authoritative mode removes a bookmark from the server and records it after upload confirmation", async () => {
+  const c = await setup();
+  await restore(c);
+  await c.engine.setMode("upload");
+  const nativeId = Object.entries(await c.store.get("mapping")).find(
+    ([, id]) => id === 4,
+  )[0];
+  await c.bookmarks.removeTree(nativeId);
+  await c.engine.tick();
+  assert.equal(c.writes(), 0);
+  assert.equal((await c.engine.listServerHistory()).total, 0);
+  await c.engine.tick();
+  assert.equal(c.writes(), 1);
+  assert.equal(
+    (await decrypt(c.server.bookmarks, key))[0].children[0].children.some(
+      (node) => node.id === 4,
+    ),
+    false,
+  );
+  assert.equal((await c.engine.listServerHistory()).items[0].kind, "deleted");
+});
+
+test("remote deletion appears in history once when observed by refresh and sync", async () => {
+  const c = await setup();
+  await restore(c);
+  await c.engine.listServer({ refresh: true });
+  const next = structuredClone(tree);
+  next[0].children[0].children = [];
+  c.server.bookmarks = await encrypt(next, key);
+  c.server.lastUpdated = "2026-01-02T00:00:00.000Z";
+  await c.engine.listServer({ refresh: true });
+  assert.deepEqual(
+    (await c.engine.listServerHistory()).items.map((item) => item.kind),
+    ["deleted"],
+  );
+  await c.engine.tick();
+  await c.engine.tick();
+  assert.equal((await c.engine.listServerHistory()).total, 1);
+});
 test("create interrupted after native side effect resumes without duplicate", async () => {
   const c = await setup();
   await c.engine.startRestore();
@@ -282,9 +377,11 @@ test("lost upload response is verified before retry, not overwritten", async () 
   await c.engine.tick();
   assert.equal((await c.engine.state()).pending, true);
   assert.equal(c.writes(), 1);
+  assert.equal((await c.engine.listServerHistory()).total, 0);
   await c.engine.tick();
   assert.equal((await c.engine.state()).pending, false);
   assert.equal(c.writes(), 1);
+  assert.equal((await c.engine.listServerHistory()).items[0].kind, "added");
 });
 test("concurrent local and remote changes stop and retain both sides", async () => {
   const c = await setup();
@@ -305,6 +402,10 @@ test("concurrent local and remote changes stop and retain both sides", async () 
   await c.engine.tick();
   assert.equal((await c.engine.status()).conflict, true);
   assert.equal(c.writes(), 0);
+  assert.deepEqual(
+    (await c.engine.listServerHistory()).items.map((item) => item.title),
+    ["Remote"],
+  );
   assert.ok(
     (await c.engine.export("conflictLocal")).bookmarks[0].children.some(
       (n) => n.title === "Local",
@@ -317,6 +418,15 @@ test("concurrent local and remote changes stop and retain both sides", async () 
     (await c.engine.export("conflictRemote")).bookmarks[0].children.some(
       (n) => n.title === "Remote",
     ),
+  );
+  assert.deepEqual(
+    (await c.engine.listServerHistory()).items
+      .slice(0, 2)
+      .map((item) => [item.kind, item.title]),
+    [
+      ["deleted", "Remote"],
+      ["added", "Local"],
+    ],
   );
 });
 test("bad remote ciphertext never deletes native data", async () => {

@@ -255,23 +255,37 @@ function updateControls() {
     libraryLoading ||
     !libraryPage ||
     libraryPage.offset + libraryPage.limit >= libraryPage.total;
-  for (const id of ["view-recent", "view-folders", "refresh-library"])
+  for (const id of [
+    "view-recent",
+    "view-folders",
+    "view-history",
+    "refresh-library",
+  ])
     $(id).disabled = busy || libraryLoading || !state.connected;
 }
 async function loadLibrary(refreshServer = false) {
   const request = ++libraryRequest;
   libraryLoading = true;
   updateControls();
-  $("library-status").textContent = "서버 북마크를 읽는 중…";
+  $("library-status").textContent =
+    libraryView === "history" ? "기록을 읽는 중…" : "서버 북마크를 읽는 중…";
   try {
-    const page = await rpc("server-list", {
-      options: {
-        view: libraryView,
-        parent: libraryParent,
-        offset: libraryOffset,
-        query: $("search").value,
-        refresh: refreshServer,
-      },
+    const history = libraryView === "history";
+    $("search").placeholder = history
+      ? "서버 변경 내역 검색"
+      : "서버 북마크 검색";
+    if (history && refreshServer)
+      await rpc("server-list", { options: { refresh: true, offset: 0 } });
+    const page = await rpc(history ? "server-history" : "server-list", {
+      options: history
+        ? { offset: libraryOffset, query: $("search").value }
+        : {
+            view: libraryView,
+            parent: libraryParent,
+            offset: libraryOffset,
+            query: $("search").value,
+            refresh: refreshServer,
+          },
     });
     if (request !== libraryRequest) return;
     libraryPage = page;
@@ -292,7 +306,25 @@ async function loadLibrary(refreshServer = false) {
     }
     for (const node of page.items) {
       const item = document.createElement("li");
-      if (node.folder) {
+      if (history) {
+        item.className = `history-${node.kind}`;
+        const heading = document.createElement("strong");
+        heading.textContent = `${{ added: "추가", changed: "수정", deleted: "삭제" }[node.kind]} · ${formatKST(node.revision)} · ${node.title}`;
+        const detail = document.createElement("span");
+        detail.textContent = [
+          node.path,
+          node.details?.length
+            ? node.details.join(" · ")
+            : node.fields.length
+              ? `변경: ${node.fields.join(", ")}`
+              : "",
+          node.url,
+          node.source,
+        ]
+          .filter(Boolean)
+          .join(" · ");
+        item.append(heading, detail);
+      } else if (node.folder) {
         const button = document.createElement("button");
         button.textContent = `${node.title} (${node.count})`;
         button.onclick = () => {
@@ -312,12 +344,23 @@ async function loadLibrary(refreshServer = false) {
       } else item.textContent = node.title;
       $("results").append(item);
     }
-    $("library-hint").textContent =
-      libraryView === "recent"
+    $("library-hint").textContent = history
+      ? "서버는 과거 기록을 제공하지 않습니다. 이 브라우저가 확인한 최근 30회 변경을 로컬에 기록합니다(버전당 상세 최대 100개). 기록 시작 전과 확인하지 못한 중간 변경은 표시할 수 없습니다."
+      : libraryView === "recent"
         ? "최근 추가 순: 기존 xBrowserSync와 같은 서버 ID 내림차순입니다. 추가 날짜는 서버에 저장돼 있지 않습니다."
         : "서버에 저장된 폴더 순서입니다. 폴더를 누르면 하위 항목을 표시합니다. 검색은 현재 폴더 안에서 수행합니다.";
-    $("library-status").textContent =
-      `${page.total}개 중 ${page.total ? page.offset + 1 : 0}–${Math.min(page.offset + page.limit, page.total)} · 서버 저장: ${formatKST(page.lastUpdated)} · 조회: ${formatKST(page.fetchedAt)}`;
+    if (history) {
+      let status = `${page.total}개 기록 중 ${page.total ? page.offset + 1 : 0}–${Math.min(page.offset + page.limit, page.total)}`;
+      if (page.latest) {
+        const { counts, shown, revision } = page.latest;
+        const count = counts.added + counts.changed + counts.deleted;
+        status += ` · 최근 서버 저장: ${formatKST(revision)} · 추가 ${counts.added}, 수정 ${counts.changed}, 삭제 ${counts.deleted}`;
+        if (shown < count) status += ` (상세 ${shown}개만 보관)`;
+      } else status += " · 아직 기록 없음";
+      $("library-status").textContent = status;
+    } else
+      $("library-status").textContent =
+        `${page.total}개 중 ${page.total ? page.offset + 1 : 0}–${Math.min(page.offset + page.limit, page.total)} · 서버 저장: ${formatKST(page.lastUpdated)} · 조회: ${formatKST(page.fetchedAt)}`;
   } catch (error) {
     if (request === libraryRequest)
       $("library-status").textContent = error.message;
@@ -336,6 +379,12 @@ $("view-recent").onclick = () => {
 };
 $("view-folders").onclick = () => {
   libraryView = "folders";
+  libraryParent = null;
+  libraryOffset = 0;
+  loadLibrary();
+};
+$("view-history").onclick = () => {
+  libraryView = "history";
   libraryParent = null;
   libraryOffset = 0;
   loadLibrary();

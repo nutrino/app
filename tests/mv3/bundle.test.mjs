@@ -351,6 +351,32 @@ for (const platform of ["firefox", "chromium"])
               },
             };
           }
+          if (message.type === "server-history")
+            return {
+              ok: true,
+              data: {
+                total: 1,
+                offset: 0,
+                limit: 30,
+                items: [
+                  {
+                    kind: "deleted",
+                    id: 7,
+                    title: "Removed bookmark",
+                    path: "기타 북마크 » Removed bookmark",
+                    url: "https://example.org/removed",
+                    fields: [],
+                    revision: "2026-10-07T00:00:00.000Z",
+                    source: "이 기기에서 업로드",
+                  },
+                ],
+                latest: {
+                  revision: "2026-10-07T00:00:00.000Z",
+                  counts: { added: 0, changed: 0, deleted: 1 },
+                  shown: 1,
+                },
+              },
+            };
           return { ok: true, data: { ...state } };
         },
       },
@@ -560,6 +586,23 @@ for (const platform of ["firefox", "chromium"])
     await flush();
     assert.equal(messages.at(-1).options.view, "recent");
     assert.equal(get("folder-path").children.length, 0);
+    get("view-history").onclick();
+    await flush();
+    assert.equal(messages.at(-1).type, "server-history");
+    assert.match(
+      get("results").children[0].textContent,
+      /삭제.*Removed bookmark/,
+    );
+    assert.match(get("library-hint").textContent, /이 브라우저/);
+    assert.match(get("library-status").textContent, /삭제 1/);
+    const beforeHistoryRefresh = messages.length;
+    get("refresh-library").onclick();
+    await flush();
+    assert.deepEqual(
+      messages.slice(beforeHistoryRefresh).map((message) => message.type),
+      ["server-list", "server-history"],
+    );
+    assert.equal(messages[beforeHistoryRefresh].options.refresh, true);
     assert.equal(
       messages.some((m) => ["restore", "sync"].includes(m.type)),
       false,

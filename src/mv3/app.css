@@ -103,6 +103,22 @@ select {
 #results li {
   margin: 8px 0;
 }
+#results li[class^="history-"] {
+  margin: 6px 0;
+  padding: 6px 8px;
+  border-left: 3px solid #17629f;
+  background: #e9f0f8;
+}
+#results li.history-deleted {
+  border-left-color: #b3261e;
+}
+#results li.history-changed {
+  border-left-color: #9b4e19;
+}
+#results li[class^="history-"] span {
+  display: block;
+  font-size: 12px;
+}
 #folder-path button {
   padding: 4px 8px;
 }
@@ -200,6 +216,9 @@ a {
   }
   #build-match.error {
     color: #ffb4a4;
+  }
+  #results li[class^="history-"] {
+    background: #263449;
   }
   a {
     color: #90caff;

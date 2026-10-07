@@ -13,6 +13,7 @@ import {
   validateTree,
 } from "./protocol.mjs";
 import { mergeInitial, serverPage } from "./server-library.mjs";
+import { appendServerHistory, serverHistoryPage } from "./server-history.mjs";
 import {
   localFolders,
   bookmarkBlock,
@@ -93,6 +94,36 @@ export class Engine {
   async save(s, entries = {}) {
     await this.store.put({ ...entries, state: s });
   }
+  historyKey(config) {
+    return `serverHistory:${config.url}:${config.id}`;
+  }
+  canCompareServer(s) {
+    return s.historyReady || (s.historyReady === undefined && !!s.baseHash);
+  }
+  async historyEntry(s, before, after, revision, source) {
+    if (!s.config || !before || !after) return {};
+    const key = this.historyKey(s.config);
+    const history = (await this.store.get(key)) || [];
+    const next = appendServerHistory(history, before, after, revision, source);
+    return next === history ? {} : { [key]: next };
+  }
+  async observeServer(s, before, after, revision) {
+    const entry = await this.historyEntry(
+      s,
+      before,
+      after,
+      revision,
+      "서버에서 확인",
+    );
+    if (Object.keys(entry).length) await this.store.put(entry);
+  }
+  async saveServerRevision(s, entries, before, after, source) {
+    const history = this.canCompareServer(s)
+      ? await this.historyEntry(s, before, after, s.lastUpdated, source)
+      : {};
+    s.historyReady = true;
+    await this.save(s, { ...entries, ...history });
+  }
   connect({ url, id, password }) {
     return this.exclusive(async () => {
       const old = await this.state();
@@ -129,6 +160,7 @@ export class Engine {
             : "download",
           lastUpdated: remote.lastUpdated,
           count: countTree(tree),
+          historyReady: false,
         },
         { preview: tree, remote: remote.bookmarks, serverView: undefined },
       );
@@ -157,6 +189,13 @@ export class Engine {
         remote.bookmarks === ""
           ? validateTree([])
           : await decrypt(remote.bookmarks, s.config.key);
+      if (remote.lastUpdated !== s.lastUpdated)
+        await this.observeServer(
+          s,
+          await this.store.get("preview"),
+          tree,
+          remote.lastUpdated,
+        );
       const empty = tree.every((root) => !root.children.length);
       if (empty !== !!s.initialUpload) {
         s.initialUpload = empty;
@@ -186,6 +225,7 @@ export class Engine {
             cipher,
             lastUpdated: remote.lastUpdated,
             tree: local.tree,
+            serverBeforeKey: "serverBackup",
             mapping: local.mapping,
             hash: await hash(local.tree),
           },
@@ -426,11 +466,13 @@ export class Engine {
       );
     }
     const epoch = s.apply.epoch;
+    const serverRevision = !s.apply.pauseAfter && !s.apply.uploadAfter;
     const pendingUpload = s.apply.uploadAfter
       ? {
           cipher: await encrypt(local.tree, s.config.key),
           lastUpdated: s.apply.lastUpdated,
           tree: local.tree,
+          serverBeforeKey: "serverBackup",
           mapping: local.mapping,
           hash: await hash(local.tree),
         }
@@ -443,7 +485,7 @@ export class Engine {
     s.apply = undefined;
     s.error = undefined;
     s.checkedAt = new Date().toISOString();
-    await this.save(s, {
+    const entries = {
       base: local.tree,
       mapping: local.mapping,
       created: undefined,
@@ -452,7 +494,16 @@ export class Engine {
       orderPlan: undefined,
       preview: undefined,
       pendingUpload,
-    });
+    };
+    if (serverRevision)
+      await this.saveServerRevision(
+        s,
+        entries,
+        await this.store.get("base"),
+        local.tree,
+        "서버에서 확인",
+      );
+    else await this.save(s, entries);
     await this.store.deletePrefix?.(`created:${epoch}:`);
   }
   async diagnoseRestore(details = false) {
@@ -667,8 +718,20 @@ export class Engine {
       let cached = await this.store.get("serverView");
       if (options.refresh || !cached) {
         const remote = await this.apiFactory(s.config).read();
+        const tree = await readTree(remote, s.config.key);
+        const before =
+          cached?.tree ||
+          (s.lastUpdated !== remote.lastUpdated
+            ? s.preview
+              ? await this.store.get("preview")
+              : this.canCompareServer(s)
+                ? await this.store.get("base")
+                : null
+            : null);
+        if (cached?.lastUpdated !== remote.lastUpdated && before)
+          await this.observeServer(s, before, tree, remote.lastUpdated);
         cached = {
-          tree: await readTree(remote, s.config.key),
+          tree,
           lastUpdated: remote.lastUpdated,
           fetchedAt: new Date().toISOString(),
         };
@@ -679,6 +742,16 @@ export class Engine {
         lastUpdated: cached.lastUpdated,
         fetchedAt: cached.fetchedAt,
       };
+    });
+  }
+  listServerHistory(options = {}) {
+    return this.exclusive(async () => {
+      const s = await this.state();
+      if (!s.config) throw Error("서버에 먼저 연결하세요.");
+      return serverHistoryPage(
+        (await this.store.get(this.historyKey(s.config))) || [],
+        options,
+      );
     });
   }
   tick() {
@@ -707,19 +780,35 @@ export class Engine {
         if (s.pending) {
           const pending = await this.store.get("pendingUpload");
           if (remote.bookmarks === pending.cipher) {
+            const previousBase = await this.store.get("base");
+            const serverBefore = pending.serverBeforeKey
+              ? await this.store.get(pending.serverBeforeKey)
+              : previousBase;
+            if (pending.serverBeforeKey && serverBefore) s.historyReady = true;
             s.lastUpdated = remote.lastUpdated;
             s.baseHash = pending.hash;
             s.pending = false;
             s.count = countTree(pending.tree);
             s.error = undefined;
-            await this.save(s, {
-              base: pending.tree,
-              mapping: pending.mapping,
-              pendingUpload: undefined,
-            });
+            await this.saveServerRevision(
+              s,
+              {
+                base: pending.tree,
+                mapping: pending.mapping,
+                pendingUpload: undefined,
+              },
+              serverBefore,
+              pending.tree,
+              "이 기기에서 업로드",
+            );
             return;
           }
           if (remote.lastUpdated === pending.lastUpdated) {
+            const previousBase = await this.store.get("base");
+            const serverBefore = pending.serverBeforeKey
+              ? await this.store.get(pending.serverBeforeKey)
+              : previousBase;
+            if (pending.serverBeforeKey && serverBefore) s.historyReady = true;
             const lastUpdated = await api.write(
               pending.cipher,
               pending.lastUpdated,
@@ -729,11 +818,17 @@ export class Engine {
             s.pending = false;
             s.error = undefined;
             s.count = countTree(pending.tree);
-            await this.save(s, {
-              base: pending.tree,
-              mapping: pending.mapping,
-              pendingUpload: undefined,
-            });
+            await this.saveServerRevision(
+              s,
+              {
+                base: pending.tree,
+                mapping: pending.mapping,
+                pendingUpload: undefined,
+              },
+              serverBefore,
+              pending.tree,
+              "이 기기에서 업로드",
+            );
             return;
           }
         }
@@ -744,6 +839,13 @@ export class Engine {
             const fullRemote =
               remote.bookmarks === undefined ? await api.read() : remote;
             const remoteTree = await readTree(fullRemote, s.config.key);
+            if (remoteChanged && this.canCompareServer(s))
+              await this.observeServer(
+                s,
+                base,
+                remoteTree,
+                fullRemote.lastUpdated,
+              );
             if ((await hash(remoteTree)) === localHash) {
               s.baseHash = localHash;
               s.lastUpdated = fullRemote.lastUpdated;
@@ -751,11 +853,17 @@ export class Engine {
               s.forceDirection = false;
               s.error = undefined;
               s.count = countTree(local.tree);
-              await this.save(s, {
-                base: local.tree,
-                mapping: local.mapping,
-                pendingUpload: undefined,
-              });
+              await this.saveServerRevision(
+                s,
+                {
+                  base: local.tree,
+                  mapping: local.mapping,
+                  pendingUpload: undefined,
+                },
+                base,
+                local.tree,
+                "서버에서 확인",
+              );
             } else if (s.mode === "download") {
               s.forceDirection = false;
               await this.beginApply(
@@ -776,6 +884,7 @@ export class Engine {
                   cipher: await encrypt(local.tree, s.config.key),
                   lastUpdated: fullRemote.lastUpdated,
                   tree: local.tree,
+                  serverBeforeKey: "serverBackup",
                   mapping: local.mapping,
                   hash: localHash,
                 },
@@ -790,6 +899,8 @@ export class Engine {
         }
         if (remoteChanged && (localChanged || s.pending)) {
           const tree = await decrypt(remote.bookmarks, s.config.key);
+          if (this.canCompareServer(s))
+            await this.observeServer(s, base, tree, remote.lastUpdated);
           s.conflict = true;
           s.error =
             "이 기기와 서버가 모두 변경되었습니다. 두 사본을 확인한 후 적용할 쪽을 선택하세요.";
@@ -801,6 +912,8 @@ export class Engine {
         }
         if (remoteChanged) {
           const tree = await decrypt(remote.bookmarks, s.config.key);
+          if (this.canCompareServer(s))
+            await this.observeServer(s, base, tree, remote.lastUpdated);
           await this.beginApply(s, tree, remote.lastUpdated, false, localHash);
           return;
         }
@@ -820,11 +933,17 @@ export class Engine {
           s.baseHash = localHash;
           s.pending = false;
           s.count = countTree(local.tree);
-          await this.save(s, {
-            base: local.tree,
-            mapping: local.mapping,
-            pendingUpload: undefined,
-          });
+          await this.saveServerRevision(
+            s,
+            {
+              base: local.tree,
+              mapping: local.mapping,
+              pendingUpload: undefined,
+            },
+            base,
+            local.tree,
+            "이 기기에서 업로드",
+          );
         }
         s.error = undefined;
         s.checkedAt = new Date().toISOString();
@@ -875,6 +994,7 @@ export class Engine {
             cipher,
             lastUpdated: remote.lastUpdated,
             tree: local.tree,
+            serverBeforeKey: "conflictRemote",
             mapping: local.mapping,
             hash: await hash(local.tree),
           },

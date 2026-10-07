@@ -85,6 +85,8 @@ browser.runtime.onMessage.addListener((message, sender) => {
         return engine.setMode(message.mode);
       case "server-list":
         return engine.listServer(message.options);
+      case "server-history":
+        return engine.listServerHistory(message.options);
       case "connect":
         return engine.connect(message.data);
       case "restore":
@@ -116,6 +118,7 @@ browser.runtime.onMessage.addListener((message, sender) => {
           "export",
           "diagnose",
           "server-list",
+          "server-history",
           "local-folders",
           "recent-folders",
         ].includes(message.type)
