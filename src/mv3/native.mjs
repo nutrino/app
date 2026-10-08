@@ -307,16 +307,6 @@ export class Native {
       }
     };
     Object.values(roots).forEach(collect);
-    const counts = {};
-    for (const step of plan.steps)
-      if (plan.reused[step.node.id])
-        counts[step.parent] = (counts[step.parent] || 0) + 1;
-    // Append new items so interrupted creates never collide with retained siblings.
-    for (const step of plan.steps)
-      if (!plan.reused[step.node.id]) {
-        step.appendIndex = counts[step.parent] || 0;
-        counts[step.parent] = step.appendIndex + 1;
-      }
   }
   createSpec(step, parentId) {
     const spec = { parentId, index: step.index, title: step.node.title || "" };

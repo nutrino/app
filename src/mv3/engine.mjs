@@ -22,6 +22,31 @@ import {
 const MODES = ["download", "upload", "both"];
 const readTree = (remote, key) =>
   remote.bookmarks === "" ? validateTree([]) : decrypt(remote.bookmarks, key);
+function createdChildren(plan, created) {
+  const groups = new Map();
+  for (const step of plan.steps) {
+    const id = created[step.node.id];
+    if (!id) continue;
+    if (!groups.has(step.parent)) groups.set(step.parent, new Set());
+    groups.get(step.parent).add(id);
+  }
+  return groups;
+}
+const describeCreation = (
+  step,
+  parent,
+  index,
+  children,
+  expected = new Set(),
+) => {
+  const actual = new Set(children.map((node) => node.id));
+  const missing = [...expected].filter((id) => !actual.has(id)).length;
+  const extra = children.filter((node) => !expected.has(node.id)).length;
+  return {
+    changed: missing > 0 || extra > 0,
+    text: `대상 ID ${step.node.id}, 부모 ID ${parent}, 요청 위치 ${index}, 현재 자식 ${children.length}개, 기록 항목 누락 ${missing}개, 미기록 항목 ${extra}개`,
+  };
+};
 export class Engine {
   constructor(store, native, apiFactory = (config) => new Api(config)) {
     this.store = store;
@@ -372,6 +397,9 @@ export class Engine {
       s.apply.phase = "create";
       await this.save(s);
     }
+    const expectedChildren = createdChildren(plan, created);
+    // Read each parent once per chunk, rather than once per bookmark in a large folder.
+    const appendPositions = new Map();
     while (s.apply.cursor < plan.steps.length) {
       const step = plan.steps[s.apply.cursor];
       if (plan.reused?.[step.node.id]) {
@@ -390,10 +418,49 @@ export class Engine {
       const parent = rootMap[step.parent] || created[step.parent];
       if (!parent) throw Error("복원 부모 폴더를 찾을 수 없습니다.");
       const spec = this.native.createSpec(step, parent);
-      if (plan.incremental) spec.index = step.appendIndex;
+      if (!appendPositions.has(parent)) {
+        const children = await this.native.bookmarks.getChildren(parent);
+        const context = describeCreation(
+          step,
+          parent,
+          children.length,
+          children,
+          expectedChildren.get(step.parent),
+        );
+        if (context.changed)
+          throw Error(
+            `복원 도중 폴더 내용이 변경되어 생성을 중단했습니다. ${context.text}. 복원 차이 확인으로 확인하세요.`,
+          );
+        appendPositions.set(parent, children.length);
+      }
+      // Old plans/intents may contain an out-of-range index. Append using the
+      // checked live folder; the final comparison/order pass still verifies the target.
+      spec.index = appendPositions.get(parent);
       s.apply.intent = { spec, id: step.node.id };
       await this.save(s);
-      const node = await this.native.bookmarks.create(spec);
+      let node;
+      try {
+        node = await this.native.bookmarks.create(spec);
+      } catch (error) {
+        if (error.message === "Index out of bounds.") {
+          const children = await this.native.bookmarks.getChildren(parent);
+          const context = describeCreation(
+            step,
+            parent,
+            spec.index,
+            children,
+            expectedChildren.get(step.parent),
+          );
+          throw Error(
+            `북마크 생성 위치가 현재 폴더 범위를 벗어났습니다. ${context.text}. 복원 차이 확인으로 확인하세요. (${error.message})`,
+          );
+        }
+        throw error;
+      }
+      appendPositions.set(parent, spec.index + 1);
+      if (!expectedChildren.has(step.parent))
+        expectedChildren.set(step.parent, new Set());
+      expectedChildren.get(step.parent).add(node.id);
       created[step.node.id] = node.id;
       s.apply.cursor++;
       delete s.apply.intent;
@@ -522,7 +589,24 @@ export class Engine {
       );
       const target = await this.store.get("target");
       const local = await this.native.snapshot(target, mapping);
-      const summary = restoreDifferences(target, local.tree);
+      let summary = restoreDifferences(target, local.tree);
+      const step = plan.steps
+        .slice(s.apply.cursor)
+        .find((step) => !plan.reused?.[step.node.id]);
+      if (s.apply.phase === "create" && step) {
+        const parent = plan.rootMap[step.parent] || created[step.parent];
+        if (parent) {
+          const children = await this.native.bookmarks.getChildren(parent);
+          const context = describeCreation(
+            step,
+            parent,
+            s.apply.intent?.spec.index ?? step.appendIndex ?? step.index,
+            children,
+            createdChildren(plan, created).get(step.parent),
+          );
+          summary += `\n\n다음 생성 위치: ${context.text}.`;
+        }
+      }
       if (!details) return summary;
       const flatten = (nodes, map = new Map()) => {
         for (const node of nodes) {

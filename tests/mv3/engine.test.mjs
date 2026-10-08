@@ -66,6 +66,13 @@ export class Bookmarks {
   async create(spec) {
     const parent = this.find(spec.parentId);
     if (!parent?.children) throw Error("bad parent");
+    if (
+      spec.index !== undefined &&
+      (!Number.isInteger(spec.index) ||
+        spec.index < 0 ||
+        spec.index > parent.children.length)
+    )
+      throw Error("Index out of bounds.");
     const node = {
       id: String(this.next++),
       title: spec.title || "",
@@ -1040,6 +1047,140 @@ test("initial download with retained siblings resumes a lost append response wit
   await c.engine.pause(true);
   await finishInitial(c);
   assert.equal(c.bookmarks.next, next + 1);
+  assert.deepEqual(await c.store.get("base"), target);
+});
+
+async function pendingEdgeCreate() {
+  const c = await setup(false);
+  await restore(c);
+  const target = structuredClone(tree);
+  target[0].children[0].children.unshift({
+    id: 20,
+    title: "new first",
+    url: "https://first.example/",
+  });
+  c.server.bookmarks = await encrypt(target, key);
+  await previewAgain(c);
+  await c.engine.startRestore();
+  const plan = await c.store.get("plan");
+  const step = plan.steps.find((step) => step.node.id === 20);
+  return { ...c, target, plan, step };
+}
+
+for (const oldIntent of [false, true])
+  test(`Edge resumes an outdated ${oldIntent ? "failed create intent" : "append plan"} using checked live siblings`, async () => {
+    const c = await pendingEdgeCreate();
+    const before = await c.bookmarks.getTree();
+    const backup = await c.store.get("backup");
+    const next = c.bookmarks.next;
+    c.step.appendIndex = 500;
+    await c.store.put({ plan: c.plan });
+    if (oldIntent) {
+      const s = await c.engine.state();
+      s.enabled = false;
+      s.error = "Index out of bounds.";
+      s.apply.phase = "create";
+      s.apply.cursor = c.plan.steps.indexOf(c.step);
+      s.apply.intent = {
+        id: c.step.node.id,
+        spec: {
+          ...c.native.createSpec(c.step, c.plan.reused[c.step.parent]),
+          index: 500,
+        },
+      };
+      await c.store.put({ state: s });
+    } else {
+      // The refreshed index must also survive a lost browser response.
+      c.bookmarks.crash = true;
+      await c.engine.tick();
+      assert.match((await c.engine.status()).error, /simulated crash/);
+    }
+    c.engine = new Engine(c.store, c.native, () => c.api);
+    await c.engine.pause(true);
+    await finishInitial(c);
+    assert.equal(c.bookmarks.next, next + 1);
+    assert.deepEqual(await c.store.get("base"), c.target);
+    assert.deepEqual(await c.store.get("backup"), backup);
+    assert.equal(c.writes(), 0);
+    const after = await c.bookmarks.getTree();
+    const originalFolder = before[0].children[0].children[0];
+    const restoredFolder = after[0].children[0].children[0];
+    assert.equal(restoredFolder.id, originalFolder.id);
+    assert.equal(restoredFolder.children[1].id, originalFolder.children[0].id);
+  });
+
+for (const change of ["missing", "extra"])
+  test(`Edge refuses to append when a retained folder has ${change} siblings`, async () => {
+    const c = await pendingEdgeCreate();
+    const folder = c.bookmarks.find(c.plan.reused[c.step.parent]);
+    if (change === "missing") folder.children.pop();
+    else
+      await c.bookmarks.create({
+        parentId: folder.id,
+        title: c.step.node.title,
+        url: c.step.node.url,
+      });
+    const before = await c.bookmarks.getTree();
+    const backup = await c.store.get("backup");
+    c.bookmarks.create = async () =>
+      assert.fail("changed folder must stop before create");
+    await c.engine.tick();
+    const status = await c.engine.status();
+    assert.equal(status.enabled, false);
+    assert.equal(status.applying, true);
+    assert.match(status.error, /폴더 내용이 변경/);
+    assert.match(
+      status.error,
+      change === "missing" ? /기록 항목 누락 1개/ : /미기록 항목 1개/,
+    );
+    const diagnostic = await c.engine.diagnoseRestore();
+    assert.match(diagnostic, /다음 생성 위치: 대상 ID 20/);
+    assert.match(
+      diagnostic,
+      change === "missing" ? /현재 자식 0개/ : /현재 자식 2개/,
+    );
+    assert.ok(!diagnostic.includes(c.step.node.url));
+    assert.ok(!diagnostic.includes(c.step.node.title));
+    assert.deepEqual(await c.bookmarks.getTree(), before);
+    assert.deepEqual(await c.store.get("backup"), backup);
+    assert.deepEqual(await c.store.get("target"), c.target);
+    assert.equal(c.writes(), 0);
+  });
+
+test("Edge reports the failed creation context when a sibling disappears during create", async () => {
+  const c = await pendingEdgeCreate();
+  const create = c.bookmarks.create.bind(c.bookmarks);
+  c.bookmarks.create = async (spec) => {
+    c.bookmarks.find(spec.parentId).children.pop();
+    return create(spec);
+  };
+  await c.engine.tick();
+  const status = await c.engine.status();
+  assert.equal(status.enabled, false);
+  assert.equal(status.applying, true);
+  assert.match(status.error, /요청 위치 1, 현재 자식 0개, 기록 항목 누락 1개/);
+  assert.match(status.error, /Index out of bounds/);
+  assert.equal((await c.engine.state()).apply.intent.id, 20);
+  assert.equal(c.writes(), 0);
+});
+
+test("large-folder appends read live siblings once per chunk, not once per bookmark", async () => {
+  const c = await setup(false);
+  const target = structuredClone(tree);
+  target[0].children[0].children = Array.from({ length: 100 }, (_, i) => ({
+    id: 20 + i,
+    title: `entry ${i}`,
+    url: `https://example.com/${i}`,
+  }));
+  c.server.bookmarks = await encrypt(target, key);
+  const getChildren = c.bookmarks.getChildren.bind(c.bookmarks);
+  let reads = 0;
+  c.bookmarks.getChildren = (id) => {
+    reads++;
+    return getChildren(id);
+  };
+  await restore(c);
+  assert.equal(reads, 4); // Toolbar, its folder, Menu wrapper, Other.
   assert.deepEqual(await c.store.get("base"), target);
 });
 
