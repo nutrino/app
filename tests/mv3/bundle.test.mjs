@@ -218,6 +218,7 @@ for (const platform of ["firefox", "chromium"])
     const build = JSON.parse(
       fs.readFileSync(`${directory}/build-info.json`, "utf8"),
     );
+    let activeElement;
     const element = () => ({
       value: "",
       ownText: "",
@@ -233,9 +234,39 @@ for (const platform of ["firefox", "chromium"])
       },
       children: [],
       dataset: {},
+      style: {},
+      disabledValue: false,
+      get disabled() {
+        return this.disabledValue;
+      },
+      set disabled(value) {
+        this.disabledValue = !!value;
+        if (this.disabledValue && activeElement === this)
+          activeElement = undefined;
+      },
       classList: { toggle() {} },
       addEventListener() {},
-      focus() {},
+      focus() {
+        if (!this.disabled) activeElement = this;
+      },
+      select() {},
+      getBoundingClientRect() {
+        return {
+          left: 740,
+          top: 540,
+          right: 780,
+          bottom: 580,
+          width: 40,
+          height: 40,
+        };
+      },
+      showModal() {
+        this.open = true;
+      },
+      close() {
+        this.open = false;
+        this.onclose?.();
+      },
       replaceChildren() {
         this.children = [];
       },
@@ -254,6 +285,10 @@ for (const platform of ["firefox", "chromium"])
       return nodes.get(id);
     };
     const messages = [];
+    let addBookmark = () => ({
+      ok: true,
+      data: { id: "12", existing: false, recent: ["10", "11"] },
+    });
     const state = {
       connected: true,
       mode: "download",
@@ -321,11 +356,7 @@ for (const platform of ["firefox", "chromium"])
                 recent: ["11"],
               },
             };
-          if (message.type === "add-bookmark")
-            return {
-              ok: true,
-              data: { id: "12", existing: false, recent: ["10", "11"] },
-            };
+          if (message.type === "add-bookmark") return addBookmark(message);
           if (message.type === "server-list") {
             const folders = message.options.view === "folders";
             const child = message.options.parent === 3;
@@ -401,7 +432,11 @@ for (const platform of ["firefox", "chromium"])
         getElementById: get,
         querySelectorAll: () => [],
         createElement: element,
+        get activeElement() {
+          return activeElement;
+        },
       },
+      window: { innerWidth: 800, innerHeight: 600 },
       location: { search: "" },
       setInterval(callback) {
         refreshTimer = callback;
@@ -440,6 +475,15 @@ for (const platform of ["firefox", "chromium"])
     t.mock.timers.tick(1);
     await flush();
     assert.equal(get("folder-results").children.length, 1);
+    assert.equal(
+      get("folder-results").children[0].children[1].className,
+      "folder-create",
+    );
+    assert.equal(
+      get("folder-results").children[0].children[1].textContent,
+      "+",
+    );
+    assert.equal(get("recent-folders").children[0].children.length, 1);
     get("folder-view-tree").onclick();
     assert.equal(get("folder-view-tree")["aria-pressed"], "true");
     assert.equal(get("folder-results").children.length, 1);
@@ -452,6 +496,15 @@ for (const platform of ["firefox", "chromium"])
       "folder-context",
     );
     const root = get("folder-results").children[0];
+    assert.equal(
+      root.children[0].children.length,
+      2,
+      "context-only ancestors have no create button",
+    );
+    assert.equal(
+      root.children[1].children[0].children[0].children[2].className,
+      "folder-create",
+    );
     const rootToggle = root.children[0].children[0];
     assert.equal(rootToggle["aria-expanded"], "true");
     rootToggle.onclick();
@@ -460,11 +513,62 @@ for (const platform of ["firefox", "chromium"])
     assert.equal(root.children[2].hidden, false);
     assert.equal(root.children[2].children.length, 1);
     assert.match(root.children[0].textContent, /Toolbar/);
-    assert.equal(root.children[2].children[0].textContent, "Work");
+    assert.equal(root.children[2].children[0].children[0].textContent, "Work");
+    assert.equal(
+      root.children[2].children[0].children[1].className,
+      "folder-create",
+    );
     assert.equal(
       root.children[2].children[0].children[0].title,
       "Toolbar » Work",
     );
+    const folderDialog = get("folder-create-dialog");
+    const folderName = get("folder-create-name");
+    const folderForm = get("folder-create-form");
+    const addRequests = () =>
+      messages.filter((message) => message.type === "add-bookmark");
+    folderDialog.getBoundingClientRect = () => {
+      const height = get("folder-create-error").textContent ? 260 : 180;
+      return {
+        left: 0,
+        top: 0,
+        right: 320,
+        bottom: height,
+        width: 320,
+        height,
+      };
+    };
+    const beforeFlatCreate = addRequests().length;
+    root.children[2].children[0].children[1].onclick();
+    assert.equal(
+      folderDialog.open,
+      true,
+      "collapsed results offer the same create popup",
+    );
+    assert.match(get("folder-create-parent").textContent, /Toolbar » Work/);
+    assert.equal(activeElement, folderName);
+    assert.equal(
+      addRequests().length,
+      beforeFlatCreate,
+      "opening the popup does not save a bookmark",
+    );
+    get("folder-create-cancel").onclick();
+    assert.equal(folderDialog.open, false);
+    assert.equal(addRequests().length, beforeFlatCreate);
+    root.children[2].children[0].children[1].onclick();
+    let preventedIdleCancel = false;
+    folderDialog.oncancel({
+      preventDefault() {
+        preventedIdleCancel = true;
+      },
+    });
+    assert.equal(
+      preventedIdleCancel,
+      false,
+      "Escape dismisses an idle popup normally",
+    );
+    folderDialog.close();
+    assert.equal(addRequests().length, beforeFlatCreate);
     get("folder-view-list").onclick();
     get("folder-view-tree").onclick();
     assert.equal(get("folder-results").children[0].children[1].hidden, true);
@@ -486,7 +590,7 @@ for (const platform of ["firefox", "chromium"])
     assert.equal(travel.children[2].hidden, false);
     assert.equal(travel.children[0].children[1].textContent, "Travel");
     assert.deepEqual(
-      travel.children[2].children.map((item) => item.textContent),
+      travel.children[2].children.map((item) => item.children[0].textContent),
       ["Projects"],
     );
     assert.equal(expandedRoot.children[1].hidden, false);
@@ -501,7 +605,9 @@ for (const platform of ["firefox", "chromium"])
     assert.equal(expandedRoot.children[2].children.length, 3);
     assert.deepEqual(
       new Set(
-        expandedRoot.children[2].children.map((item) => item.textContent),
+        expandedRoot.children[2].children.map(
+          (item) => item.children[0].textContent,
+        ),
       ),
       new Set(["Travel", "Travel » Projects", "Work"]),
     );
@@ -511,7 +617,7 @@ for (const platform of ["firefox", "chromium"])
     assert.equal(expandedRoot.children[2].children.length, 3);
     assert.ok(
       expandedRoot.children[2].children.some(
-        (item) => item.textContent === "Travel » Projects",
+        (item) => item.children[0].textContent === "Travel » Projects",
       ),
     );
     expandedRoot.children[0].children[0].onclick();
@@ -560,6 +666,206 @@ for (const platform of ["firefox", "chromium"])
     get("folder-query").oncompositionend();
     t.mock.timers.tick(500);
     assert.equal(get("folder-results").children.length, 1);
+
+    const beforeCreate = addRequests().length;
+    get("folder-results").children[0].children[1].onclick();
+    assert.equal(folderDialog.open, true);
+    assert.equal(activeElement, folderName);
+    assert.match(get("folder-create-parent").textContent, /Toolbar » Work/);
+    assert.ok(parseFloat(folderDialog.style.left) >= 0);
+    assert.ok(
+      parseFloat(folderDialog.style.left) <= 480,
+      "popup stays within the viewport width",
+    );
+    assert.ok(parseFloat(folderDialog.style.top) >= 0);
+    assert.ok(
+      parseFloat(folderDialog.style.top) <= 420,
+      "popup stays within the viewport height",
+    );
+    assert.ok(
+      parseFloat(folderDialog.style.top) > 340,
+      "opening near the viewport bottom exercises error growth",
+    );
+    assert.equal(addRequests().length, beforeCreate);
+
+    folderName.value = "   ";
+    let prevented = false;
+    await folderForm.onsubmit({
+      preventDefault() {
+        prevented = true;
+      },
+    });
+    assert.equal(prevented, true);
+    assert.equal(
+      addRequests().length,
+      beforeCreate,
+      "blank folder names do not reach the worker",
+    );
+    assert.equal(folderDialog.open, true);
+    assert.ok(get("folder-create-error").textContent);
+    assert.ok(
+      parseFloat(folderDialog.style.top) +
+        folderDialog.getBoundingClientRect().height <=
+        600,
+      "blank-name validation repositions the taller popup within the viewport",
+    );
+    folderName.value = "한글 폴더";
+    for (const composing of [{ isComposing: true }, { keyCode: 229 }]) {
+      let compositionPrevented = false;
+      folderName.onkeydown({
+        key: "Enter",
+        ...composing,
+        preventDefault() {
+          compositionPrevented = true;
+        },
+      });
+      assert.equal(
+        compositionPrevented,
+        true,
+        "IME confirmation must not submit the form",
+      );
+    }
+    assert.equal(addRequests().length, beforeCreate);
+    folderName.oncompositionstart();
+    await folderForm.onsubmit({ preventDefault() {} });
+    assert.equal(
+      addRequests().length,
+      beforeCreate,
+      "a composing name cannot be submitted",
+    );
+    folderName.oncompositionend();
+    state.applying = true;
+    refreshTimer();
+    await flush();
+    assert.equal(folderName.disabled, true);
+    assert.equal(get("folder-create-submit").disabled, true);
+    await folderForm.onsubmit({ preventDefault() {} });
+    assert.equal(
+      addRequests().length,
+      beforeCreate,
+      "blocked bookmark writes cannot create folders",
+    );
+    state.applying = false;
+    refreshTimer();
+    await flush();
+    assert.equal(folderName.disabled, false);
+    assert.equal(get("folder-create-submit").disabled, false);
+
+    get("folder-create-cancel").onclick();
+    get("folder-results").children[0].children[1].onclick();
+    assert.ok(
+      parseFloat(folderDialog.style.top) > 340,
+      "reopening resets the popup height before a worker error",
+    );
+    folderName.value = "한글 폴더";
+    addBookmark = () => ({ ok: false, error: "Folder creation failed" });
+    folderName.focus();
+    await folderForm.onsubmit({ preventDefault() {} });
+    assert.equal(
+      folderDialog.open,
+      true,
+      "worker errors leave the popup open for retry",
+    );
+    assert.equal(folderName.value, "한글 폴더");
+    assert.match(
+      get("folder-create-error").textContent,
+      /Folder creation failed/,
+    );
+    assert.ok(
+      parseFloat(folderDialog.style.top) +
+        folderDialog.getBoundingClientRect().height <=
+        600,
+      "worker errors reposition the taller popup within the viewport",
+    );
+    assert.equal(folderName.disabled, false);
+    assert.equal(get("folder-create-submit").disabled, false);
+    assert.equal(
+      activeElement,
+      folderName,
+      "failed saves restore name focus for an Enter retry",
+    );
+    const beforeCancel = addRequests().length;
+    get("folder-create-cancel").onclick();
+    assert.equal(folderDialog.open, false);
+    assert.equal(
+      addRequests().length,
+      beforeCancel,
+      "cancel does not create or save anything",
+    );
+
+    get("folder-results").children[0].children[1].onclick();
+    folderName.value = "  새 폴더  ";
+    let releaseCreate;
+    addBookmark = () =>
+      new Promise((resolve) => {
+        releaseCreate = resolve;
+      });
+    const creating = folderForm.onsubmit({ preventDefault() {} });
+    await flush();
+    assert.deepEqual(JSON.parse(JSON.stringify(addRequests().at(-1).data)), {
+      url: "https://example.org/current",
+      title: "Current page",
+      parentId: "10",
+      folderTitle: "새 폴더",
+    });
+    assert.equal(folderName.disabled, true);
+    assert.equal(get("folder-create-submit").disabled, true);
+    assert.notEqual(
+      activeElement,
+      folderName,
+      "disabling the saving input removes focus",
+    );
+    let preventedSavingCancel = false;
+    folderDialog.oncancel({
+      preventDefault() {
+        preventedSavingCancel = true;
+      },
+    });
+    assert.equal(
+      preventedSavingCancel,
+      true,
+      "Escape cannot dismiss a save in progress",
+    );
+    get("folder-create-cancel").onclick();
+    assert.equal(folderDialog.open, true);
+    releaseCreate({
+      ok: true,
+      data: {
+        id: "22",
+        existing: false,
+        recent: ["21", "10", "11"],
+        folder: {
+          id: "21",
+          parentId: "10",
+          title: "새 폴더",
+          segments: ["Toolbar", "Work", "새 폴더"],
+          path: "Toolbar » Work » 새 폴더",
+        },
+      },
+    });
+    await creating;
+    assert.equal(folderDialog.open, false);
+    assert.equal(folderName.disabled, false);
+    assert.equal(
+      activeElement,
+      get("folder-query"),
+      "successful saves return focus to folder search",
+    );
+    assert.match(
+      get("folder-feedback").textContent,
+      /저장했습니다.*Toolbar » Work » 새 폴더/,
+    );
+    assert.equal(get("recent-folders").children.length, 3);
+    assert.equal(
+      get("recent-folders").children[0].children[0].textContent,
+      "Toolbar » Work » 새 폴더",
+    );
+    assert.equal(get("recent-folders").children[0].children.length, 1);
+    assert.ok(
+      get("folder-results").children.some(
+        (item) => item.children[0].textContent === "Toolbar » Work » 새 폴더",
+      ),
+    );
     get("sync-mode").value = "both";
     get("sync-mode").onchange();
     await get("save-mode").onclick();

@@ -98,6 +98,12 @@ export class Bookmarks {
       1,
     );
   }
+  async remove(id) {
+    const node = this.find(id);
+    if (!node) throw Error("not found");
+    if (node.children?.length) throw Error("folder is not empty");
+    return this.removeTree(id);
+  }
   async move(id, { index }) {
     const node = this.find(id);
     const parent = this.find(node.parentId);
@@ -1653,6 +1659,188 @@ for (const firefox of [true, false])
     await assert.rejects(c.engine.addBookmark(bookmark), /복원 중/);
     assert.equal(c.bookmarks.find(parentId).children.length, 1);
   });
+
+for (const firefox of [true, false]) {
+  const browser = firefox ? "Firefox" : "Chromium";
+  test(`${browser} quick bookmark creates a named child folder and remembers its full path`, async () => {
+    const c = await setup(firefox);
+    const rootId = firefox ? "unfiled_____" : "2";
+    const parent = await c.bookmarks.create({
+      parentId: rootId,
+      title: "업무",
+    });
+    const page = {
+      parentId: parent.id,
+      title: "Current page",
+      url: "https://current.example/",
+    };
+    // A copy in the parent must not prevent saving inside the new folder.
+    await c.engine.addBookmark(page);
+    await c.engine.listLocalFolders();
+    const result = await c.engine.addBookmark({
+      ...page,
+      folderTitle: "  새 폴더 / 자료  ",
+    });
+    assert.deepEqual(result.folder, {
+      id: result.folder.id,
+      parentId: parent.id,
+      title: "새 폴더 / 자료",
+      segments: ["기타 북마크", "업무", "새 폴더 / 자료"],
+      path: "기타 북마크 » 업무 » 새 폴더 / 자료",
+    });
+    assert.equal(result.existing, false);
+    const folder = c.bookmarks.find(result.folder.id);
+    assert.equal(folder.parentId, parent.id);
+    assert.equal(folder.children.length, 1);
+    assert.equal(folder.children[0].id, result.id);
+    assert.equal(folder.children[0].title, page.title);
+    assert.equal(folder.children[0].url, page.url);
+    assert.deepEqual(result.recent, [folder.id, parent.id]);
+    assert.deepEqual(await c.store.get("recentBookmarkFolders"), result.recent);
+    const refreshed = await c.engine.listLocalFolders();
+    assert.deepEqual(
+      refreshed.folders.find((entry) => entry.id === folder.id),
+      result.folder,
+    );
+    assert.deepEqual(refreshed.recent, result.recent);
+    assert.equal(c.writes(), 0);
+  });
+  test(`${browser} new folder saves validate inputs and synchronization state before creating anything`, async () => {
+    const c = await setup(firefox);
+    const parentId = firefox ? "toolbar_____" : "1";
+    const readonly = await c.bookmarks.create({
+      parentId,
+      title: "Managed",
+    });
+    c.bookmarks.find(readonly.id).unmodifiable = "managed";
+    const nested = await c.bookmarks.create({
+      parentId: readonly.id,
+      title: "Managed child",
+    });
+    const bookmark = await c.bookmarks.create({
+      parentId,
+      title: "Existing page",
+      url: "https://existing.example/",
+    });
+    const before = await c.bookmarks.getTree();
+    const page = {
+      parentId,
+      title: "Current page",
+      url: "https://current.example/",
+      folderTitle: "New folder",
+    };
+    for (const folderTitle of ["", " \t\n ", null, 1, {}])
+      await assert.rejects(
+        c.engine.addBookmark({ ...page, folderTitle }),
+        /폴더 이름/,
+      );
+    for (const invalidParent of [
+      "0",
+      "missing",
+      readonly.id,
+      nested.id,
+      bookmark.id,
+    ])
+      await assert.rejects(
+        c.engine.addBookmark({ ...page, parentId: invalidParent }),
+        /폴더/,
+      );
+    for (const url of [
+      "not a url",
+      "javascript:alert(1)",
+      "data:text/plain,hello",
+      "chrome-extension://test/page.html",
+      "moz-extension://test/page.html",
+    ])
+      await assert.rejects(c.engine.addBookmark({ ...page, url }));
+    const state = await c.engine.state();
+    for (const blocked of [
+      { ...state, enabled: true, mode: "download", preview: false },
+      { ...state, enabled: false, apply: { phase: "create" } },
+    ]) {
+      await c.store.put({ state: blocked });
+      await assert.rejects(c.engine.addBookmark(page), /서버 → 로컬|복원 중/);
+    }
+    assert.deepEqual(await c.bookmarks.getTree(), before);
+    assert.equal(await c.store.get("recentBookmarkFolders"), undefined);
+    assert.equal(c.writes(), 0);
+  });
+}
+
+test("new folder save removes an empty folder on failure without replacing the original error", async () => {
+  const c = await setup();
+  const page = {
+    parentId: "toolbar_____",
+    title: "Page",
+    url: "https://current.example/",
+    folderTitle: "New folder",
+  };
+  const before = await c.bookmarks.getTree();
+  await c.engine.listLocalFolders();
+  const create = c.bookmarks.create.bind(c.bookmarks);
+  c.bookmarks.create = (spec) => {
+    if (spec.url) throw Error("bookmark create failed");
+    return create(spec);
+  };
+  await assert.rejects(c.engine.addBookmark(page), /bookmark create failed/);
+  assert.deepEqual(await c.bookmarks.getTree(), before);
+  assert.equal(c.engine.folderIndex, undefined);
+  assert.equal(await c.store.get("recentBookmarkFolders"), undefined);
+  // If cleanup itself fails, report the save error and refresh the real tree.
+  c.bookmarks.remove = async () => {
+    throw Error("cleanup failed");
+  };
+  await c.engine.listLocalFolders();
+  await assert.rejects(c.engine.addBookmark(page), /bookmark create failed/);
+  assert.equal(c.engine.folderIndex, undefined);
+  const refreshed = await c.engine.listLocalFolders();
+  assert.ok(refreshed.folders.some((folder) => folder.title === "New folder"));
+});
+
+test("new folder save never removes a folder containing a bookmark after an uncertain native failure", async () => {
+  const c = await setup();
+  const create = c.bookmarks.create.bind(c.bookmarks);
+  c.bookmarks.create = async (spec) => {
+    const node = await create(spec);
+    if (spec.url) throw Error("response lost after create");
+    return node;
+  };
+  await assert.rejects(
+    c.engine.addBookmark({
+      parentId: "toolbar_____",
+      title: "Page",
+      url: "https://current.example/",
+      folderTitle: "Keep contents",
+    }),
+    /response lost after create/,
+  );
+  const [folder] = c.bookmarks.find("toolbar_____").children;
+  assert.equal(folder.title, "Keep contents");
+  assert.equal(folder.children[0].url, "https://current.example/");
+  assert.equal(c.engine.folderIndex, undefined);
+});
+
+test("new folder creation failure invalidates a cached index even after a native mutation", async () => {
+  const c = await setup();
+  await c.engine.listLocalFolders();
+  c.bookmarks.crash = true;
+  await assert.rejects(
+    c.engine.addBookmark({
+      parentId: "toolbar_____",
+      title: "Page",
+      url: "https://current.example/",
+      folderTitle: "Created before failure",
+    }),
+    /simulated crash after native create/,
+  );
+  assert.equal(c.engine.folderIndex, undefined);
+  assert.ok(
+    (await c.engine.listLocalFolders()).folders.some(
+      (folder) => folder.title === "Created before failure",
+    ),
+  );
+  assert.equal(await c.store.get("recentBookmarkFolders"), undefined);
+});
 
 test("recent destination folders persist, deduplicate, cap at ten and omit removed folders", async () => {
   const c = await setup();

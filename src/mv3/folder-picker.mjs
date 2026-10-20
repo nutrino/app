@@ -219,6 +219,42 @@ export class FolderPicker {
       this.refreshIndex = true;
       return this.query ? this.loadFolders(true) : this.loadRecent();
     };
+    const dialog = get("folder-create-dialog");
+    const name = get("folder-create-name");
+    name.oninput = () => (get("folder-create-error").textContent = "");
+    name.oncompositionstart = () => (this.composingFolderName = true);
+    name.oncompositionend = () => (this.composingFolderName = false);
+    name.onkeydown = (event) => {
+      if (
+        event.key === "Enter" &&
+        (event.isComposing || event.keyCode === 229 || this.composingFolderName)
+      )
+        event.preventDefault();
+    };
+    get("folder-create-form").onsubmit = (event) => {
+      event.preventDefault();
+      if (this.composingFolderName || !this.creatingFolder || this.disabled)
+        return;
+      const folderTitle = name.value.trim();
+      if (!folderTitle) {
+        get("folder-create-error").textContent = "새 폴더 이름을 입력하세요.";
+        this.positionCreateFolder();
+        name.focus();
+        return;
+      }
+      return this.add(this.creatingFolder, folderTitle);
+    };
+    get("folder-create-cancel").onclick = () => {
+      if (!this.saving) dialog.close();
+    };
+    dialog.oncancel = (event) => {
+      if (this.saving) event.preventDefault();
+    };
+    dialog.onclose = () => {
+      this.creatingFolder = undefined;
+      this.createFolderAnchor = undefined;
+      this.composingFolderName = false;
+    };
   }
   async load() {
     const foldersLoading = this.loadRecent();
@@ -293,6 +329,32 @@ export class FolderPicker {
       this.saving ||
       this.loading
     );
+    this.get("folder-create-name").disabled = this.disabled;
+    this.get("folder-create-submit").disabled = this.disabled;
+    this.get("folder-create-cancel").disabled = !!this.saving;
+    this.get("folder-create-submit").textContent = this.saving
+      ? "저장 중…"
+      : "폴더 만들고 저장";
+  }
+  openCreateFolder(folder, button) {
+    if (this.disabled) return;
+    this.creatingFolder = folder;
+    this.composingFolderName = false;
+    this.get("folder-create-parent").textContent = folder.path;
+    this.get("folder-create-name").value = "";
+    this.get("folder-create-error").textContent = "";
+    const dialog = this.get("folder-create-dialog");
+    this.createFolderAnchor = button;
+    dialog.showModal();
+    this.positionCreateFolder();
+    this.get("folder-create-name").focus();
+  }
+  positionCreateFolder() {
+    const dialog = this.get("folder-create-dialog");
+    const anchor = this.createFolderAnchor.getBoundingClientRect();
+    const popup = dialog.getBoundingClientRect();
+    dialog.style.left = `${Math.max(12, Math.min(anchor.right - popup.width, window.innerWidth - popup.width - 12))}px`;
+    dialog.style.top = `${Math.max(12, Math.min(anchor.bottom + 4, window.innerHeight - popup.height - 12))}px`;
   }
   render() {
     const matches = this.query ? searchFolders(this.folders, this.query) : [];
@@ -341,14 +403,29 @@ export class FolderPicker {
         }
       });
     };
-    const appendFolder = (folder, list, segments) => {
+    const createFolderButton = (folder) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "folder-create";
+      button.textContent = "+";
+      button.title = `${folder.path} 아래에 새 폴더를 만들고 현재 페이지 저장`;
+      button.setAttribute("aria-label", button.title);
+      button.setAttribute("aria-haspopup", "dialog");
+      button.setAttribute("aria-controls", "folder-create-dialog");
+      button.onclick = () => this.openCreateFolder(folder, button);
+      this.buttons.push(button);
+      return button;
+    };
+    const appendFolder = (folder, list, segments, allowCreate = false) => {
       const item = document.createElement("li");
+      if (allowCreate) item.className = "folder-result-row";
       const button = document.createElement("button");
       button.type = "button";
       fillFolderLabel(button, folder, segments);
       button.title = folder.path;
       button.onclick = () => this.add(folder);
       item.append(button);
+      if (allowCreate) item.append(createFolderButton(folder));
       (typeof list === "string" ? this.get(list) : list).append(item);
       this.buttons.push(button);
       return button;
@@ -357,7 +434,8 @@ export class FolderPicker {
     const visible = matches.slice(0, this.limit);
     if (this.view === "list") {
       this.get("folder-results").className = "";
-      for (const folder of visible) appendFolder(folder, "folder-results");
+      for (const folder of visible)
+        appendFolder(folder, "folder-results", undefined, true);
     } else {
       this.get("folder-results").className = "folder-tree";
       const appendBranch = (branch, list) => {
@@ -389,8 +467,11 @@ export class FolderPicker {
             for (const { folder, segments } of collapsedFolderResults(
               branch,
               visible,
-            ))
-              flatButtons.push(appendFolder(folder, flat, segments));
+            )) {
+              const start = this.buttons.length;
+              appendFolder(folder, flat, segments, true);
+              flatButtons.push(...this.buttons.slice(start));
+            }
           };
           const toggle = document.createElement("button");
           toggle.type = "button";
@@ -416,6 +497,7 @@ export class FolderPicker {
           };
           row.append(toggle);
           row.append(label);
+          if (branch.match) row.append(createFolderButton(branch.folder));
           item.append(row);
           for (const child of branch.children) appendBranch(child, children);
           item.append(children);
@@ -427,6 +509,7 @@ export class FolderPicker {
           spacer.setAttribute("aria-hidden", "true");
           row.append(spacer);
           row.append(label);
+          if (branch.match) row.append(createFolderButton(branch.folder));
           item.append(row);
         }
         list.append(item);
@@ -436,14 +519,25 @@ export class FolderPicker {
     }
     this.update(this.state || {}, this.busy);
   }
-  async add(folder) {
+  async add(folder, folderTitle) {
     if (this.disabled) return;
     this.saving = true;
+    if (folderTitle) this.get("folder-create-error").textContent = "";
     this.update(this.state || {}, this.busy);
     try {
       const result = await this.rpc("add-bookmark", {
-        data: { ...this.page, parentId: folder.id },
+        data: {
+          ...this.page,
+          parentId: folder.id,
+          ...(folderTitle ? { folderTitle } : {}),
+        },
       });
+      if (result.folder) {
+        folder = result.folder;
+        this.folders.push(folder);
+        this.recentFolders.push(folder);
+      }
+      if (folderTitle) this.get("folder-create-dialog").close();
       if (result.recent) {
         this.recent = result.recent;
         this.render();
@@ -453,9 +547,19 @@ export class FolderPicker {
         : `저장했습니다: ${folder.path}`;
     } catch (error) {
       this.get("folder-feedback").textContent = error.message;
+      if (folderTitle)
+        this.get("folder-create-error").textContent = error.message;
     } finally {
       this.saving = false;
       this.update(this.state || {}, this.busy);
+      if (folderTitle && this.get("folder-create-dialog").open)
+        this.positionCreateFolder();
+      if (folderTitle)
+        this.get(
+          this.get("folder-create-dialog").open
+            ? "folder-create-name"
+            : "folder-query",
+        ).focus();
     }
   }
 }

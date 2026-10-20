@@ -726,7 +726,7 @@ export class Engine {
       .slice(0, 10);
     return { folders, recent };
   }
-  addBookmark({ parentId, url, title } = {}) {
+  addBookmark({ parentId, url, title, folderTitle } = {}) {
     return this.exclusive(async () => {
       const blocked = bookmarkBlock(await this.state());
       if (blocked) throw Error(blocked);
@@ -736,6 +736,11 @@ export class Engine {
         typeof title !== "string"
       )
         throw Error("저장할 페이지 또는 폴더가 올바르지 않습니다.");
+      if (folderTitle !== undefined) {
+        if (typeof folderTitle !== "string" || !folderTitle.trim())
+          throw Error("새 폴더 이름을 입력하세요.");
+        folderTitle = folderTitle.trim();
+      }
       const parsed = new URL(url);
       if (
         [
@@ -747,16 +752,55 @@ export class Engine {
       )
         throw Error("이 페이지 주소는 빠른 북마크 추가를 지원하지 않습니다.");
       const folders = localFolders(await this.native.bookmarks.getTree());
-      if (!folders.some((folder) => folder.id === parentId))
+      const parent = folders.find((folder) => folder.id === parentId);
+      if (!parent)
         throw Error(
           "저장할 폴더가 없거나 읽기 전용입니다. 폴더를 새로 읽어 주세요.",
         );
-      const children = await this.native.bookmarks.getChildren(parentId);
-      const existing = children.find((node) => node.url === url);
-      if (existing) return { id: existing.id, existing: true };
-      const node = await this.native.bookmarks.create({ parentId, title, url });
-      this.invalidateLocalFolders();
+      let folder;
+      if (folderTitle === undefined) {
+        const children = await this.native.bookmarks.getChildren(parentId);
+        const existing = children.find((node) => node.url === url);
+        if (existing) return { id: existing.id, existing: true };
+      }
+      let node;
+      try {
+        if (folderTitle !== undefined) {
+          const created = await this.native.bookmarks.create({
+            parentId,
+            title: folderTitle,
+          });
+          const createdTitle = displayFolderTitle(created);
+          const segments = [...parent.segments, createdTitle];
+          folder = {
+            id: created.id,
+            parentId,
+            title: createdTitle,
+            segments,
+            path: segments.join(" » "),
+          };
+          parentId = created.id;
+        }
+        try {
+          node = await this.native.bookmarks.create({ parentId, title, url });
+        } catch (error) {
+          if (folder) {
+            try {
+              // Native remove rejects nonempty folders, preserving any entries
+              // added concurrently or by a create that failed after committing.
+              await this.native.bookmarks.remove(folder.id);
+            } catch {
+              // Preserve the original save error if cleanup is unavailable.
+            }
+          }
+          throw error;
+        }
+      } finally {
+        // A native operation can reject even after changing the bookmark tree.
+        this.invalidateLocalFolders();
+      }
       const available = new Set(folders.map((folder) => folder.id));
+      if (folder) available.add(folder.id);
       const recent = [
         parentId,
         ...((await this.store.get("recentBookmarkFolders")) || []).filter(
@@ -764,7 +808,12 @@ export class Engine {
         ),
       ].slice(0, 10);
       await this.store.put({ recentBookmarkFolders: recent });
-      return { id: node.id, existing: false, recent };
+      return {
+        id: node.id,
+        existing: false,
+        recent,
+        ...(folder ? { folder } : {}),
+      };
     });
   }
   setMode(mode) {
