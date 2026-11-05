@@ -156,6 +156,24 @@ for (const platform of ["firefox", "chromium"])
       JSON.parse(JSON.stringify(restarted.data.build)),
       buildInfo,
     );
+    rpc.api.bookmarks.search = async () => [];
+    const timerCount = rpc.timers.length;
+    const currentPage = await rpc("page-bookmarks", {
+      url: "https://example.org/",
+    });
+    assert.equal(currentPage.ok, true);
+    assert.equal(currentPage.data.length, 0);
+    assert.equal(
+      rpc.timers.length,
+      timerCount,
+      "current-page lookup must not schedule synchronization",
+    );
+    const invalidMove = await rpc("move-bookmark", {
+      data: { url: "https://example.org/" },
+    });
+    assert.equal(invalidMove.ok, false);
+    assert.match(invalidMove.error, /변경할 북마크/);
+    assert.equal(rpc.timers.length, timerCount);
     const db = await new Promise((resolve, reject) => {
       const request = indexedDB.open("xbrowsersync-mv3-v1", 1);
       request.onsuccess = () => resolve(request.result);
@@ -305,6 +323,7 @@ for (const platform of ["firefox", "chromium"])
         async sendMessage(message) {
           messages.push(message);
           if (message.type === "mode") state.mode = message.mode;
+          if (message.type === "page-bookmarks") return { ok: true, data: [] };
           if (message.type === "recent-folders")
             return {
               ok: true,

@@ -17,8 +17,16 @@
     </header>
     <main>
       <section id="quick-bookmark" aria-label="현재 페이지를 로컬 폴더에 저장">
-        <label for="folder-query">현재 페이지 북마크 추가</label>
+        <label id="bookmark-heading" for="folder-query"
+          >현재 페이지 북마크 추가</label
+        >
         <p id="bookmark-page" class="hint"></p>
+        <p id="bookmark-current-path" class="hint" hidden></p>
+        <select
+          id="bookmark-existing"
+          aria-label="변경할 북마크 경로 선택"
+          hidden
+        ></select>
         <input
           id="folder-query"
           type="search"
@@ -47,7 +55,7 @@
             <p id="folder-create-parent" class="hint"></p>
             <label for="folder-create-name">새 폴더 이름</label>
             <input id="folder-create-name" required autocomplete="off" />
-            <p class="hint">
+            <p id="folder-create-hint" class="hint">
               Enter를 누르면 폴더를 만들고 현재 페이지를 저장합니다.
             </p>
             <p id="folder-create-error" role="alert"></p>

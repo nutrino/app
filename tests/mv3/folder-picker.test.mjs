@@ -11,6 +11,42 @@ import {
   bookmarkBlock,
 } from "../../src/mv3/folder-picker.mjs";
 
+class Element {
+  constructor() {
+    this.value = "";
+    this.children = [];
+    this.attributes = {};
+  }
+  focus() {}
+  setAttribute(name, value) {
+    this.attributes[name] = value;
+  }
+  append(...children) {
+    this.children.push(...children);
+  }
+  replaceChildren(...children) {
+    this.children = children;
+  }
+  close() {
+    this.open = false;
+  }
+}
+function elements() {
+  const nodes = new Map();
+  return (id) => {
+    if (!nodes.has(id)) nodes.set(id, new Element());
+    return nodes.get(id);
+  };
+}
+function installDocument(t) {
+  const previous = globalThis.document;
+  globalThis.document = { createElement: () => new Element() };
+  t.after(() => {
+    if (previous === undefined) delete globalThis.document;
+    else globalThis.document = previous;
+  });
+}
+
 test("folder index searches full paths, keeps duplicate names and excludes unmodifiable branches", () => {
   const source = [
     {
@@ -215,11 +251,7 @@ test("folder loading continues when active page access fails or the settings tab
     },
     async () => [{ url: "chrome-extension://test/app.html" }],
   ]) {
-    const elements = new Map();
-    const get = (id) => {
-      if (!elements.has(id)) elements.set(id, { value: "", focus() {} });
-      return elements.get(id);
-    };
+    const get = elements();
     const picker = new FolderPicker({ tabs: { query } }, () => {}, get);
     let loaded = false;
     picker.loadRecent = async () => {
@@ -234,11 +266,7 @@ test("folder loading continues when active page access fails or the settings tab
 
 test("lazy search shares an in-flight read and does not show results for cleared input", async (t) => {
   t.mock.timers.enable({ apis: ["setTimeout"] });
-  const elements = new Map();
-  const get = (id) => {
-    if (!elements.has(id)) elements.set(id, { value: "" });
-    return elements.get(id);
-  };
+  const get = elements();
   let resolve;
   let calls = 0;
   const picker = new FolderPicker(
@@ -274,4 +302,118 @@ test("lazy search shares an in-flight read and does not show results for cleared
   await new Promise((done) => setImmediate(done));
   assert.deepEqual(matches, []);
   assert.equal(picker.loaded, true);
+});
+
+test("bookmarked popup shows paths, selects one duplicate and moves it using the folder input", async (t) => {
+  installDocument(t);
+  const get = elements();
+  const page = { url: "https://example.org/", title: "Current tab title" };
+  const folders = [
+    {
+      id: "a",
+      title: "A",
+      path: "기타 북마크 » A",
+      segments: ["기타 북마크", "A"],
+    },
+    {
+      id: "b",
+      title: "B",
+      path: "기타 북마크 » B",
+      segments: ["기타 북마크", "B"],
+    },
+  ];
+  const bookmarks = folders.map((folder, i) => ({
+    id: `page-${i}`,
+    parentId: folder.id,
+    path: folder.path,
+    url: page.url,
+    title: `Saved title ${i}`,
+  }));
+  const calls = [];
+  const picker = new FolderPicker(
+    { tabs: { query: async () => [page] } },
+    async (type, payload) => {
+      calls.push({ type, payload });
+      if (type === "recent-folders") return { folders: [] };
+      if (type === "page-bookmarks") return structuredClone(bookmarks);
+      if (type === "local-folders") return { folders, recent: [] };
+      assert.equal(type, "move-bookmark");
+      const bookmark = bookmarks.find(
+        (node) => node.id === payload.data.bookmarkId,
+      );
+      bookmark.parentId = payload.data.parentId;
+      bookmark.path = folders.find(
+        (folder) => folder.id === bookmark.parentId,
+      ).path;
+      return { id: bookmark.id, recent: [bookmark.parentId] };
+    },
+    get,
+  );
+  await picker.load();
+  assert.equal(get("bookmark-heading").textContent, "현재 북마크 경로");
+  assert.equal(get("bookmark-current-path").textContent, folders[0].path);
+  assert.equal(get("bookmark-existing").hidden, false);
+  assert.equal(get("folder-query").placeholder, "변경할 폴더 검색…");
+  assert.equal(
+    calls.some((call) => call.type === "local-folders"),
+    false,
+  );
+  get("bookmark-existing").value = bookmarks[1].id;
+  get("bookmark-existing").onchange();
+  assert.equal(get("bookmark-current-path").textContent, folders[1].path);
+  picker.query = "A";
+  await picker.loadFolders();
+  await get("folder-results").children[0].children[0].onclick();
+  assert.equal(calls.at(-2).payload.data.bookmarkId, bookmarks[1].id);
+  assert.equal(bookmarks[0].parentId, "a");
+  assert.equal(bookmarks[1].parentId, "a");
+  assert.equal(get("bookmark-current-path").textContent, folders[0].path);
+  assert.match(get("folder-feedback").textContent, /옮겼습니다/);
+});
+
+test("unsaved popup switches to editing after save and blocks unsafe fallback when lookup fails", async (t) => {
+  installDocument(t);
+  const get = elements();
+  const page = { url: "https://new.example/", title: "New page" };
+  const folder = { id: "a", path: "기타 북마크 » A" };
+  let bookmark,
+    fail = false,
+    creates = 0;
+  const picker = new FolderPicker(
+    { tabs: { query: async () => [page] } },
+    async (type) => {
+      if (type === "recent-folders") return { folders: [] };
+      if (type === "page-bookmarks") {
+        if (fail) throw Error("lookup failed");
+        return bookmark ? [bookmark] : [];
+      }
+      assert.equal(type, "add-bookmark");
+      creates++;
+      bookmark = {
+        ...page,
+        id: "page",
+        parentId: folder.id,
+        path: folder.path,
+      };
+      return { id: bookmark.id };
+    },
+    get,
+  );
+  await picker.load();
+  assert.equal(get("bookmark-heading").textContent, "현재 페이지 북마크 추가");
+  assert.equal(get("bookmark-current-path").hidden, true);
+  await picker.add(folder);
+  assert.equal(creates, 1);
+  assert.equal(get("bookmark-heading").textContent, "현재 북마크 경로");
+  assert.equal(get("bookmark-existing").hidden, true);
+  bookmark.readonly = true;
+  await picker.loadPageBookmarks();
+  assert.equal(picker.disabled, true);
+  assert.match(get("folder-warning").textContent, /읽기 전용/);
+  fail = true;
+  await picker.loadPageBookmarks();
+  assert.equal(picker.disabled, true);
+  assert.match(get("folder-warning").textContent, /확인하지 못했습니다/);
+  await picker.add(folder);
+  assert.equal(creates, 1);
 });

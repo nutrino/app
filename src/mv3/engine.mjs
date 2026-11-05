@@ -656,12 +656,7 @@ export class Engine {
   invalidateLocalFolders() {
     this.folderIndex = undefined;
   }
-  async listRecentFolders() {
-    const ids = ((await this.store.get("recentBookmarkFolders")) || []).slice(
-      0,
-      10,
-    );
-    const nodes = new Map();
+  async localFolder(id, nodes = new Map()) {
     const read = (id) => {
       if (!nodes.has(id))
         nodes.set(
@@ -670,33 +665,74 @@ export class Engine {
         );
       return nodes.get(id);
     };
+    const segments = [];
+    const seen = new Set();
+    let node = await read(id);
+    const parentId = node?.parentId;
+    let readonly = false;
+    while (node && node.parentId !== undefined) {
+      if (
+        seen.has(node.id) ||
+        node.url !== undefined ||
+        node.type === "separator"
+      )
+        throw Error("북마크 폴더 경로를 확인할 수 없습니다.");
+      seen.add(node.id);
+      readonly ||= !!node.unmodifiable;
+      const parent = await read(node.parentId);
+      segments.unshift(
+        displayFolderTitle(node, parent?.parentId === undefined),
+      );
+      node = parent;
+    }
+    if (!node || !segments.length)
+      throw Error("북마크 폴더 경로를 확인할 수 없습니다.");
+    return {
+      id,
+      parentId,
+      title: segments.at(-1),
+      segments,
+      path: segments.join(" » "),
+      readonly,
+    };
+  }
+  async pageBookmarks(url) {
+    if (typeof url !== "string")
+      throw Error("페이지 주소가 올바르지 않습니다.");
+    const nodes = new Map();
+    const matches = await this.native.bookmarks.search({ url });
+    return Promise.all(
+      matches
+        .filter((node) => node.url === url)
+        .map(async (node) => {
+          const folder = await this.localFolder(node.parentId, nodes);
+          return {
+            id: node.id,
+            title: node.title,
+            url: node.url,
+            parentId: node.parentId,
+            path: folder.path,
+            readonly: folder.readonly || !!node.unmodifiable,
+          };
+        }),
+    );
+  }
+  async listRecentFolders() {
+    const ids = ((await this.store.get("recentBookmarkFolders")) || []).slice(
+      0,
+      10,
+    );
+    const nodes = new Map();
     const folders = await Promise.all(
       ids.map(async (id) => {
         try {
-          const segments = [];
-          const seen = new Set();
-          let node = await read(id);
-          while (node && node.parentId !== undefined) {
-            if (
-              seen.has(node.id) ||
-              node.unmodifiable ||
-              node.url !== undefined ||
-              node.type === "separator"
-            )
-              return null;
-            seen.add(node.id);
-            const parent = await read(node.parentId);
-            segments.unshift(
-              displayFolderTitle(node, parent?.parentId === undefined),
-            );
-            node = parent;
-          }
-          if (!node || !segments.length) return null;
+          const folder = await this.localFolder(id, nodes);
+          if (folder.readonly) return null;
           return {
             id,
-            title: segments.at(-1),
-            segments,
-            path: segments.join(" » "),
+            title: folder.title,
+            segments: folder.segments,
+            path: folder.path,
           };
         } catch {
           // Deleted or unavailable recent destinations must not prevent opening.
@@ -726,7 +762,7 @@ export class Engine {
       .slice(0, 10);
     return { folders, recent };
   }
-  addBookmark({ parentId, url, title, folderTitle } = {}) {
+  addBookmark({ parentId, url, title, folderTitle, bookmarkId } = {}) {
     return this.exclusive(async () => {
       const blocked = bookmarkBlock(await this.state());
       if (blocked) throw Error(blocked);
@@ -757,8 +793,24 @@ export class Engine {
         throw Error(
           "저장할 폴더가 없거나 읽기 전용입니다. 폴더를 새로 읽어 주세요.",
         );
+      if (bookmarkId !== undefined) {
+        if (typeof bookmarkId !== "string")
+          throw Error("변경할 북마크가 올바르지 않습니다.");
+        const [current] = await this.native.bookmarks.get(bookmarkId);
+        if (!current || current.url !== url)
+          throw Error(
+            "북마크가 삭제되었거나 주소가 변경되었습니다. 폴더를 새로 읽어 주세요.",
+          );
+        if (
+          current.unmodifiable ||
+          !folders.some((folder) => folder.id === current.parentId)
+        )
+          throw Error("읽기 전용 북마크는 변경할 수 없습니다.");
+        if (folderTitle === undefined && current.parentId === parentId)
+          return { id: current.id, existing: true };
+      }
       let folder;
-      if (folderTitle === undefined) {
+      if (bookmarkId === undefined && folderTitle === undefined) {
         const children = await this.native.bookmarks.getChildren(parentId);
         const existing = children.find((node) => node.url === url);
         if (existing) return { id: existing.id, existing: true };
@@ -782,7 +834,10 @@ export class Engine {
           parentId = created.id;
         }
         try {
-          node = await this.native.bookmarks.create({ parentId, title, url });
+          node =
+            bookmarkId === undefined
+              ? await this.native.bookmarks.create({ parentId, title, url })
+              : await this.native.bookmarks.move(bookmarkId, { parentId });
         } catch (error) {
           if (folder) {
             try {

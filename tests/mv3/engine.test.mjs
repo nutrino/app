@@ -44,6 +44,7 @@ export class Bookmarks {
             { id: "2", title: "Other", children: [] },
           ],
     };
+    for (const root of this.tree.children) root.parentId = "0";
   }
   find(id, node = this.tree) {
     if (node.id === id) return node;
@@ -62,6 +63,15 @@ export class Bookmarks {
   }
   async getChildren(id) {
     return structuredClone(this.find(id).children);
+  }
+  async search({ url }) {
+    const matches = [];
+    const walk = (node) => {
+      if (node.url === url) matches.push(structuredClone(node));
+      for (const child of node.children || []) walk(child);
+    };
+    walk(this.tree);
+    return matches;
   }
   async create(spec) {
     const parent = this.find(spec.parentId);
@@ -104,11 +114,14 @@ export class Bookmarks {
     if (node.children?.length) throw Error("folder is not empty");
     return this.removeTree(id);
   }
-  async move(id, { index }) {
+  async move(id, { parentId, index }) {
     const node = this.find(id);
     const parent = this.find(node.parentId);
+    const destination = parentId === undefined ? parent : this.find(parentId);
     const from = parent.children.findIndex((child) => child.id === id);
-    parent.children.splice(index, 0, parent.children.splice(from, 1)[0]);
+    parent.children.splice(from, 1);
+    destination.children.splice(index ?? destination.children.length, 0, node);
+    node.parentId = destination.id;
     return structuredClone(node);
   }
   async update(id, changes) {
@@ -1659,6 +1672,204 @@ for (const firefox of [true, false])
     await assert.rejects(c.engine.addBookmark(bookmark), /복원 중/);
     assert.equal(c.bookmarks.find(parentId).children.length, 1);
   });
+
+for (const firefox of [true, false]) {
+  const browser = firefox ? "Firefox" : "Chromium";
+  test(`${browser} current-page lookup shows every exact URL path without full-tree or server reads`, async () => {
+    const c = await setup(firefox);
+    const rootId = firefox ? "unfiled_____" : "2";
+    const parent = await c.bookmarks.create({
+      parentId: rootId,
+      title: "Gitea",
+    });
+    const url = "https://github.com/go-gitea/gitea";
+    const first = await c.bookmarks.create({
+      parentId: parent.id,
+      url,
+      title: "Gitea",
+    });
+    const second = await c.bookmarks.create({
+      parentId: rootId,
+      url,
+      title: "Another copy",
+    });
+    await c.bookmarks.create({
+      parentId: rootId,
+      url: url + "#readme",
+      title: "Different fragment",
+    });
+    await c.bookmarks.create({
+      parentId: rootId,
+      url: url + "?tab=readme",
+      title: "Different query",
+    });
+    c.bookmarks.find(parent.id).unmodifiable = "managed";
+    c.bookmarks.getTree = c.api.read = async () =>
+      assert.fail("lookup must only read local matches and ancestors");
+    const get = c.bookmarks.get.bind(c.bookmarks);
+    const reads = [];
+    c.bookmarks.get = async (id) => {
+      reads.push(id);
+      return get(id);
+    };
+    // Lookup must also bypass a synchronization waiting on the network.
+    let release;
+    const pending = c.engine.exclusive(
+      () =>
+        new Promise((resolve) => {
+          release = resolve;
+        }),
+    );
+    await new Promise((resolve) => setImmediate(resolve));
+    try {
+      const matches = await c.engine.pageBookmarks(url);
+      assert.deepEqual(
+        matches.map((node) => node.id),
+        [first.id, second.id],
+      );
+      assert.deepEqual(
+        matches.map((node) => node.path),
+        ["기타 북마크 » Gitea", "기타 북마크"],
+      );
+      assert.deepEqual(
+        matches.map((node) => node.readonly),
+        [true, false],
+      );
+      assert.equal(reads.length, new Set(reads).size);
+      assert.equal(c.writes(), 0);
+    } finally {
+      release();
+      await pending;
+    }
+  });
+
+  test(`${browser} moving an existing bookmark preserves identity, duplicates and sync metadata`, async () => {
+    const c = await setup(firefox);
+    await restore(c);
+    const mapping = await c.store.get("mapping");
+    const id = Object.keys(mapping).find((id) => mapping[id] === 4);
+    const original = c.bookmarks.find(id);
+    const destination = firefox ? "unfiled_____" : "2";
+    const duplicate = await c.bookmarks.create({
+      parentId: destination,
+      title: "Other copy",
+      url: original.url,
+    });
+    const result = await c.engine.addBookmark({
+      bookmarkId: id,
+      parentId: destination,
+      title: "Tab title must not replace saved title",
+      url: original.url,
+    });
+    assert.equal(result.id, id);
+    assert.equal(c.bookmarks.find(id).parentId, destination);
+    assert.equal(c.bookmarks.find(id).title, "Example");
+    assert.equal(c.bookmarks.find(duplicate.id).title, "Other copy");
+    assert.deepEqual(result.recent, [destination]);
+    assert.deepEqual(
+      await c.engine.addBookmark({
+        bookmarkId: id,
+        parentId: destination,
+        title: "Unused",
+        url: original.url,
+      }),
+      { id, existing: true },
+    );
+    assert.equal(c.writes(), 0);
+    await c.engine.tick();
+    await c.engine.tick();
+    assert.equal(c.writes(), 1);
+    const remote = await decrypt(c.server.bookmarks, key);
+    const moved = remote
+      .find((root) => root.title === ROOTS[2])
+      .children.find((node) => node.id === 4);
+    assert.equal(moved.title, "Example");
+    assert.equal(moved.description, "Keep metadata");
+    assert.deepEqual(moved.tags, ["tag"]);
+  });
+
+  test(`${browser} moving into a new folder reuses the bookmark and rejects stale or protected sources`, async () => {
+    const c = await setup(firefox);
+    const rootId = firefox ? "toolbar_____" : "1";
+    const source = await c.bookmarks.create({
+      parentId: rootId,
+      title: "Source",
+    });
+    const bookmark = await c.bookmarks.create({
+      parentId: source.id,
+      title: "Saved title",
+      url: "https://page.example/",
+    });
+    const data = {
+      bookmarkId: bookmark.id,
+      parentId: rootId,
+      folderTitle: "New folder",
+      title: "Tab title",
+      url: bookmark.url,
+    };
+    for (const invalid of [
+      { ...data, url: bookmark.url + "changed" },
+      { ...data, bookmarkId: source.id },
+      { ...data, bookmarkId: "missing" },
+      { ...data, bookmarkId: 7 },
+    ]) {
+      const before = await c.bookmarks.getTree();
+      await assert.rejects(c.engine.addBookmark(invalid));
+      assert.deepEqual(await c.bookmarks.getTree(), before);
+    }
+    c.bookmarks.find(source.id).unmodifiable = "managed";
+    await assert.rejects(c.engine.addBookmark(data), /읽기 전용/);
+    delete c.bookmarks.find(source.id).unmodifiable;
+    const state = await c.engine.state();
+    await c.store.put({
+      state: { ...state, enabled: true, preview: false, mode: "download" },
+    });
+    await assert.rejects(c.engine.addBookmark(data), /서버 → 로컬/);
+    await c.store.put({ state: { ...state, apply: { phase: "create" } } });
+    await assert.rejects(c.engine.addBookmark(data), /복원 중/);
+    await c.store.put({ state });
+    const result = await c.engine.addBookmark(data);
+    assert.equal(result.id, bookmark.id);
+    assert.equal(result.folder.path.endsWith(" » New folder"), true);
+    assert.equal(
+      c.bookmarks.find(result.folder.id).children[0].id,
+      bookmark.id,
+    );
+    assert.equal(c.bookmarks.find(source.id).children.length, 0);
+    assert.equal(c.bookmarks.find(bookmark.id).title, "Saved title");
+  });
+}
+
+test("a failed or uncertain move preserves the bookmark and cleans up only empty new folders", async () => {
+  const c = await setup();
+  const bookmark = await c.bookmarks.create({
+    parentId: "toolbar_____",
+    title: "Page",
+    url: "https://page.example/",
+  });
+  const data = {
+    bookmarkId: bookmark.id,
+    parentId: "unfiled_____",
+    folderTitle: "Destination",
+    title: bookmark.title,
+    url: bookmark.url,
+  };
+  const before = await c.bookmarks.getTree();
+  const move = c.bookmarks.move.bind(c.bookmarks);
+  c.bookmarks.move = async () => {
+    throw Error("move failed");
+  };
+  await assert.rejects(c.engine.addBookmark(data), /move failed/);
+  assert.deepEqual(await c.bookmarks.getTree(), before);
+  c.bookmarks.move = async (...args) => {
+    await move(...args);
+    throw Error("move response lost");
+  };
+  await assert.rejects(c.engine.addBookmark(data), /move response lost/);
+  const folder = c.bookmarks.find("unfiled_____").children[0];
+  assert.equal(folder.children[0].id, bookmark.id);
+  assert.equal(c.engine.folderIndex, undefined);
+});
 
 for (const firefox of [true, false]) {
   const browser = firefox ? "Firefox" : "Chromium";

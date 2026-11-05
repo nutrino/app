@@ -73,9 +73,15 @@ browser.runtime.onMessage.addListener((message, sender) => {
     switch (message?.type) {
       case "recent-folders":
         return engine.listRecentFolders();
+      case "page-bookmarks":
+        return engine.pageBookmarks(message.url);
       case "local-folders":
         return engine.listLocalFolders(message.refresh === true);
       case "add-bookmark":
+        return engine.addBookmark(message.data);
+      case "move-bookmark":
+        if (typeof message.data?.bookmarkId !== "string")
+          throw Error("변경할 북마크가 올바르지 않습니다.");
         return engine.addBookmark(message.data);
       case "diagnose":
         return engine.diagnoseRestore(message.details === true);
@@ -121,6 +127,7 @@ browser.runtime.onMessage.addListener((message, sender) => {
           "server-history",
           "local-folders",
           "recent-folders",
+          "page-bookmarks",
         ].includes(message.type)
       )
         schedule(50);

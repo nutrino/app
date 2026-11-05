@@ -168,9 +168,9 @@ export function highlightedParts(text, query) {
 }
 export function bookmarkBlock(state) {
   if (state.applying || state.apply)
-    return "복원 중에는 북마크를 추가할 수 없습니다. 복원 완료 후 다시 시도하세요.";
+    return "복원 중에는 북마크를 추가하거나 변경할 수 없습니다. 복원 완료 후 다시 시도하세요.";
   if (state.enabled && state.mode === "download" && !state.preview)
-    return "서버 → 로컬 동기화 중입니다. 추가할 북마크를 유지하려면 동기화를 일시 정지하거나 양방향·로컬 → 서버로 변경하세요.";
+    return "서버 → 로컬 동기화 중입니다. 북마크 추가·변경을 유지하려면 동기화를 일시 정지하거나 양방향·로컬 → 서버로 변경하세요.";
   return "";
 }
 export class FolderPicker {
@@ -181,10 +181,17 @@ export class FolderPicker {
     this.folders = [];
     this.recent = [];
     this.recentFolders = [];
+    this.bookmarks = [];
     this.limit = 50;
     this.query = "";
     this.view = "list";
     this.collapsedFolders = new Set();
+    get("bookmark-existing").onchange = () => {
+      this.bookmark = this.bookmarks.find(
+        (bookmark) => bookmark.id === get("bookmark-existing").value,
+      );
+      this.render();
+    };
     for (const view of ["list", "tree"])
       get(`folder-view-${view}`).onclick = () => {
         this.view = view;
@@ -214,10 +221,13 @@ export class FolderPicker {
       this.limit += 50;
       this.render();
     };
-    get("folder-reload").onclick = () => {
+    get("folder-reload").onclick = async () => {
       this.loaded = false;
       this.refreshIndex = true;
-      return this.query ? this.loadFolders(true) : this.loadRecent();
+      await Promise.all([
+        this.page ? this.loadPageBookmarks() : undefined,
+        this.query ? this.loadFolders(true) : this.loadRecent(),
+      ]);
     };
     const dialog = get("folder-create-dialog");
     const name = get("folder-create-name");
@@ -257,6 +267,7 @@ export class FolderPicker {
     };
   }
   async load() {
+    this.checkingPage = true;
     const foldersLoading = this.loadRecent();
     let pageError;
     try {
@@ -269,14 +280,44 @@ export class FolderPicker {
       this.page = { url: tab.url, title: tab.title || tab.url };
       this.get("bookmark-page").textContent = this.page.title;
       this.get("bookmark-page").title = this.page.url;
+      await this.loadPageBookmarks();
     } catch (error) {
       pageError = error.message;
+    } finally {
+      this.checkingPage = false;
     }
     // Folder browsing must also work in a settings tab or on a restricted page.
     await foldersLoading;
     this.update(this.state || {}, this.busy);
     if (pageError) this.get("folder-feedback").textContent = pageError;
     this.get("folder-query").focus();
+  }
+  async loadPageBookmarks(selectedId = this.bookmark?.id) {
+    this.checkingPage = true;
+    this.pageLookupError = "";
+    this.update(this.state || {}, this.busy);
+    try {
+      this.bookmarks = await this.rpc("page-bookmarks", { url: this.page.url });
+      this.bookmark =
+        this.bookmarks.find((bookmark) => bookmark.id === selectedId) ||
+        this.bookmarks.find((bookmark) => !bookmark.readonly) ||
+        this.bookmarks[0];
+      const select = this.get("bookmark-existing");
+      select.replaceChildren();
+      for (const bookmark of this.bookmarks) {
+        const option = document.createElement("option");
+        option.value = bookmark.id;
+        option.textContent = `${bookmark.path} · ${bookmark.title || this.page.title}`;
+        select.append(option);
+      }
+      select.value = this.bookmark?.id || "";
+      this.render();
+    } catch (error) {
+      this.pageLookupError = `현재 북마크를 확인하지 못했습니다. 폴더 새로 읽기로 다시 시도하세요. ${error.message}`;
+    } finally {
+      this.checkingPage = false;
+      this.update(this.state || {}, this.busy);
+    }
   }
   async loadRecent() {
     try {
@@ -304,8 +345,9 @@ export class FolderPicker {
       this.recentLoaded = true;
       this.recent = data.recent;
       this.limit = 50;
-      this.get("folder-feedback").textContent =
-        "폴더를 누르면 현재 페이지를 저장합니다.";
+      this.get("folder-feedback").textContent = this.bookmark
+        ? "폴더를 누르면 선택한 북마크를 해당 경로로 옮깁니다."
+        : "폴더를 누르면 현재 페이지를 저장합니다.";
       this.render();
     } catch (error) {
       this.get("folder-feedback").textContent = error.message;
@@ -317,24 +359,68 @@ export class FolderPicker {
   update(state, busy = false) {
     this.state = state;
     this.busy = busy;
-    const blocked = bookmarkBlock(state);
+    const editing = !!this.bookmark;
+    this.get("bookmark-heading").textContent = editing
+      ? "현재 북마크 경로"
+      : "현재 페이지 북마크 추가";
+    this.get("bookmark-current-path").hidden = !editing;
+    this.get("bookmark-current-path").textContent = this.bookmark?.path || "";
+    this.get("bookmark-existing").hidden = this.bookmarks.length < 2;
+    this.get("bookmark-existing").disabled = !!(
+      busy ||
+      this.saving ||
+      this.checkingPage
+    );
+    this.get("quick-bookmark").setAttribute(
+      "aria-label",
+      editing ? "현재 북마크 위치 변경" : "현재 페이지를 로컬 폴더에 저장",
+    );
+    this.get("folder-query").placeholder = editing
+      ? "변경할 폴더 검색…"
+      : "저장할 폴더 검색…";
+    this.get("folder-query").setAttribute(
+      "aria-label",
+      editing
+        ? "북마크 위치를 변경할 폴더 검색"
+        : "현재 페이지를 저장할 폴더 검색",
+    );
+    this.get("folder-create-heading").textContent = editing
+      ? "새 폴더로 북마크 이동"
+      : "새 폴더에 북마크 저장";
+    this.get("folder-create-hint").textContent = editing
+      ? "Enter를 누르면 폴더를 만들고 선택한 북마크를 옮깁니다."
+      : "Enter를 누르면 폴더를 만들고 현재 페이지를 저장합니다.";
+    const blocked =
+      bookmarkBlock(state) ||
+      this.pageLookupError ||
+      (this.bookmark?.readonly
+        ? "읽기 전용 북마크는 위치를 변경할 수 없습니다."
+        : "");
     this.get("folder-warning").textContent = blocked;
     this.get("folder-warning").hidden = !blocked;
     this.disabled =
-      busy || this.saving || this.loading || !this.page || !!blocked;
+      busy ||
+      this.saving ||
+      this.loading ||
+      this.checkingPage ||
+      !this.page ||
+      !!blocked;
     for (const button of this.buttons || []) button.disabled = this.disabled;
     this.get("folder-more").disabled = !!(busy || this.saving || this.loading);
     this.get("folder-reload").disabled = !!(
       busy ||
       this.saving ||
-      this.loading
+      this.loading ||
+      this.checkingPage
     );
     this.get("folder-create-name").disabled = this.disabled;
     this.get("folder-create-submit").disabled = this.disabled;
     this.get("folder-create-cancel").disabled = !!this.saving;
     this.get("folder-create-submit").textContent = this.saving
       ? "저장 중…"
-      : "폴더 만들고 저장";
+      : editing
+        ? "폴더 만들고 이동"
+        : "폴더 만들고 저장";
   }
   openCreateFolder(folder, button) {
     if (this.disabled) return;
@@ -408,7 +494,7 @@ export class FolderPicker {
       button.type = "button";
       button.className = "folder-create";
       button.textContent = "+";
-      button.title = `${folder.path} 아래에 새 폴더를 만들고 현재 페이지 저장`;
+      button.title = `${folder.path} 아래에 새 폴더를 만들고 ${this.bookmark ? "현재 북마크 이동" : "현재 페이지 저장"}`;
       button.setAttribute("aria-label", button.title);
       button.setAttribute("aria-haspopup", "dialog");
       button.setAttribute("aria-controls", "folder-create-dialog");
@@ -525,13 +611,18 @@ export class FolderPicker {
     if (folderTitle) this.get("folder-create-error").textContent = "";
     this.update(this.state || {}, this.busy);
     try {
-      const result = await this.rpc("add-bookmark", {
-        data: {
-          ...this.page,
-          parentId: folder.id,
-          ...(folderTitle ? { folderTitle } : {}),
+      const editing = !!this.bookmark;
+      const result = await this.rpc(
+        editing ? "move-bookmark" : "add-bookmark",
+        {
+          data: {
+            ...this.page,
+            ...(editing ? { bookmarkId: this.bookmark.id } : {}),
+            parentId: folder.id,
+            ...(folderTitle ? { folderTitle } : {}),
+          },
         },
-      });
+      );
       if (result.folder) {
         folder = result.folder;
         this.folders.push(folder);
@@ -542,9 +633,10 @@ export class FolderPicker {
         this.recent = result.recent;
         this.render();
       }
+      await this.loadPageBookmarks(result.id);
       this.get("folder-feedback").textContent = result.existing
         ? `이미 이 폴더에 저장되어 있습니다: ${folder.path}`
-        : `저장했습니다: ${folder.path}`;
+        : `${editing ? "옮겼습니다" : "저장했습니다"}: ${folder.path}`;
     } catch (error) {
       this.get("folder-feedback").textContent = error.message;
       if (folderTitle)

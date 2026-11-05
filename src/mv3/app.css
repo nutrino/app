@@ -233,6 +233,16 @@ a {
   max-height: 3.1em;
   overflow-y: auto;
 }
+#bookmark-current-path {
+  overflow-wrap: anywhere;
+  max-height: 7.5em;
+  overflow-y: auto;
+  font-weight: 600;
+}
+#bookmark-existing {
+  width: 100%;
+  margin-bottom: 6px;
+}
 #folder-view {
   display: flex;
   gap: 4px;
